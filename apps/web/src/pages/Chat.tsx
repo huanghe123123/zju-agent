@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Layout } from "../components/Layout.js";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
+import { Layout, RightPanel } from "../components/Layout.js";
 import {
   useConversations,
   useConversation,
@@ -10,7 +13,10 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from "../api/agent.js";
-import { useAllAssignments, useExams, useTimetable } from "../api/zju.js";
+import { useAllAssignments, useExams, useTimetable, useCourses, useSemesters } from "../api/zju.js";
+import { useQuery } from "@tanstack/react-query";
+import { useApiFetch } from "../api/bootstrap.js";
+import type { ApiResponse, AuthStatus } from "@zju-agent/core";
 
 type PendingConfirmation = {
   confirmationId: string;
@@ -22,33 +28,10 @@ type PendingConfirmation = {
 export function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [explicitNewChat, setExplicitNewChat] = useState(false);
-  const [dashCollapsed, setDashCollapsed] = useState(false);
   const { data: conversations } = useConversations();
   const delConv = useDeleteConversation();
 
   const conv = useConversation(activeId);
-
-  // Dashboard 数据（静默兜底）
-  const { data: assignments } = useAllAssignments();
-  const { data: exams } = useExams();
-  const { data: timetable } = useTimetable();
-
-  const pendingCount = (assignments ?? []).filter((a) => !a.submitted).length;
-  const overdueCount = (assignments ?? [])
-    .filter((a) => !a.submitted && a.deadline)
-    .filter((a) => Date.parse(a.deadline!) < Date.now()).length;
-
-  // 今日课程数
-  const today = new Date();
-  const weekday = today.getDay() === 0 ? 7 : today.getDay();
-  const todayCourseCount = (timetable ?? []).filter((e) => e.weekday === weekday).length;
-
-  // 近期 7 天考试数
-  const now = Date.now();
-  const weekLater = now + 7 * 24 * 3600_000;
-  const upcomingExamCount = (exams ?? []).filter(
-    (e) => e.time && Date.parse(e.time) >= now && Date.parse(e.time) <= weekLater,
-  ).length;
 
   // 自动选第一条（仅在非显式新建对话时）
   useEffect(() => {
@@ -58,10 +41,10 @@ export function ChatPage() {
   }, [activeId, explicitNewChat, conversations]);
 
   return (
-    <Layout>
+    <Layout rightPanel={<DashboardPanel />}>
       <div className="flex h-[calc(100vh-3rem)] gap-3">
         {/* 会话列表 */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 md:flex">
+        <aside className="hidden w-48 shrink-0 flex-col border-r border-slate-200 md:flex">
           <button
             onClick={() => {
               setActiveId(null);
@@ -111,15 +94,6 @@ export function ChatPage() {
 
         {/* 主对话区 */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Dashboard 信息卡片条 */}
-          <DashboardBar
-            collapsed={dashCollapsed}
-            onToggle={() => setDashCollapsed((v) => !v)}
-            todayCourseCount={todayCourseCount}
-            pendingCount={pendingCount}
-            overdueCount={overdueCount}
-            upcomingExamCount={upcomingExamCount}
-          />
           {activeId && conv.data ? (
             <ConversationView
               conversationId={activeId}
@@ -139,67 +113,133 @@ export function ChatPage() {
   );
 }
 
-/**
- * Dashboard 信息卡片条 — 紧凑水平排列，可折叠。
- * 展示今日课程数、待办作业（含逾期）、近期考试数。
- */
-function DashboardBar({
-  collapsed,
-  onToggle,
-  todayCourseCount,
-  pendingCount,
-  overdueCount,
-  upcomingExamCount,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-  todayCourseCount: number;
-  pendingCount: number;
-  overdueCount: number;
-  upcomingExamCount: number;
-}) {
-  const stats = [
-    { label: "今日课程", value: todayCourseCount, to: "/exams", highlight: false },
-    {
-      label: "待办作业",
-      value: pendingCount,
-      to: "/assignments",
-      highlight: overdueCount > 0,
-      highlightLabel: overdueCount > 0 ? `${overdueCount} 逾期` : undefined,
+/** 右栏 Dashboard 面板 */
+function DashboardPanel() {
+  const apiFetch = useApiFetch();
+  const { data: authStatus, isLoading: authLoading } = useQuery({
+    queryKey: ["auth", "status"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/auth/status");
+      const json = (await res.json()) as ApiResponse<AuthStatus>;
+      if (!json.ok) throw new Error(json.error.message);
+      return json.data;
     },
-    { label: "近期考试", value: upcomingExamCount, to: "/exams", highlight: false },
-  ];
+  });
+  const loggedIn = authStatus?.ok ?? false;
+
+  const { data: assignments } = useAllAssignments();
+  const { data: exams } = useExams();
+  const { data: timetable } = useTimetable();
+  const { data: courses } = useCourses();
+  const { data: semesters } = useSemesters();
+  const hasActiveSemester = (semesters ?? []).some((s) => s.isActive);
+
+  const pendingCount = (assignments ?? []).filter((a) => !a.submitted).length;
+  const overdueCount = (assignments ?? [])
+    .filter((a) => !a.submitted && a.deadline)
+    .filter((a) => Date.parse(a.deadline!) < Date.now()).length;
+
+  const today = new Date();
+  const weekday = today.getDay() === 0 ? 7 : today.getDay();
+  const todayCourseCount = (timetable ?? []).filter((e) => e.weekday === weekday).length;
+
+  const now = Date.now();
+  const weekLater = now + 7 * 24 * 3600_000;
+  const upcomingExamCount = (exams ?? []).filter(
+    (e) => e.time && Date.parse(e.time) >= now && Date.parse(e.time) <= weekLater,
+  ).length;
 
   return (
-    <div className="border-b border-slate-200 bg-white/80 backdrop-blur">
-      <div className="flex items-center gap-1 px-4 py-2">
-        {stats.map((s) => (
-          <Link
-            key={s.label}
-            to={s.to}
-            className="flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1 text-xs transition hover:border-zju-primary hover:bg-blue-50"
-          >
-            <span className="text-slate-400">{s.label}</span>
-            <span className={`font-semibold ${s.highlight ? "text-rose-500" : "text-slate-700"}`}>
-              {s.value}
-            </span>
-            {s.highlightLabel && (
-              <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-600">
-                {s.highlightLabel}
-              </span>
-            )}
-          </Link>
-        ))}
-        <div className="flex-1" />
-        <button
-          onClick={onToggle}
-          className="shrink-0 rounded p-1 text-xs text-slate-400 hover:text-slate-600"
-          title={collapsed ? "展开信息卡片" : "折叠信息卡片"}
-        >
-          {collapsed ? "▸ 展开" : "▾ 折叠"}
-        </button>
+    <RightPanel title="📊 Dashboard">
+      <div className="space-y-3">
+        <DashCard
+          title="今日课程"
+          value={loggedIn && hasActiveSemester ? `${todayCourseCount} 节` : "—"}
+          hint={loggedIn && hasActiveSemester ? "点击查看课表" : "非学期或未登录"}
+          to="/courses"
+          highlight={false}
+        />
+        <DashCard
+          title="待办作业"
+          value={loggedIn ? `${pendingCount} 项` : "—"}
+          hint={
+            loggedIn
+              ? overdueCount > 0
+                ? `${overdueCount} 项已逾期`
+                : "点击查看详情"
+              : "登录后展示"
+          }
+          to="/assignments"
+          highlight={overdueCount > 0}
+        />
+        <DashCard
+          title="近期考试"
+          value={loggedIn ? `${upcomingExamCount} 场` : "—"}
+          hint={loggedIn ? "未来 7 天内" : "登录后展示"}
+          to="/exams"
+          highlight={false}
+        />
+        <DashCard
+          title="课程总数"
+          value={loggedIn && hasActiveSemester ? `${(courses ?? []).length} 门` : "—"}
+          hint={loggedIn && hasActiveSemester ? "点击查看课程资料" : "非学期或未登录"}
+          to="/courses"
+          highlight={false}
+        />
+        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+          <div className="text-xs text-slate-400">天气</div>
+          <div className="my-1 font-semibold text-slate-700">—</div>
+          <div className="text-[11px] text-slate-400">在 AI 助手中询问天气</div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+          <div className="text-xs text-slate-400">登录状态</div>
+          <div className="my-1 font-semibold text-slate-700">
+            {authLoading ? "查询中" : loggedIn ? (authStatus?.username ?? "已登录") : "未登录"}
+          </div>
+          <div className="text-[11px] text-slate-400">
+            {loggedIn ? "统一身份认证已验证" : "前往设置配置 ZJU 账号"}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+          <div className="text-xs text-slate-400">模型状态</div>
+          <div className="my-1 font-semibold text-slate-700">{loggedIn ? "可用" : "未配置"}</div>
+          <div className="text-[11px] text-slate-400">
+            <Link to="/settings" className="text-zju-primary hover:underline">
+              前往设置 →
+            </Link>
+          </div>
+        </div>
       </div>
-    </div>
+    </RightPanel>
+  );
+}
+
+function DashCard({
+  title,
+  value,
+  hint,
+  to,
+  highlight,
+}: {
+  title: string;
+  value: string;
+  hint: string;
+  to: string;
+  highlight: boolean;
+}) {
+  return (
+    <Link
+      to={to}
+      className={`block rounded-lg border p-3 text-sm shadow-sm transition hover:shadow-md ${
+        highlight ? "border-rose-200 bg-rose-50/50" : "border-slate-200 bg-white"
+      } hover:border-zju-primary`}
+    >
+      <div className="text-xs text-slate-400">{title}</div>
+      <div className={`my-1 text-lg font-semibold ${highlight ? "text-rose-600" : "text-slate-700"}`}>
+        {value}
+      </div>
+      <div className="text-[11px] text-slate-400">{hint}</div>
+    </Link>
   );
 }
 
@@ -223,6 +263,15 @@ function ConversationView({
     setPending(null);
     setError(null);
   }, [conversationId]);
+
+  // 历史消息加载完成后，若 live 内容已存在于 history 中则清除（避免短暂消失→重现的闪烁）
+  useEffect(() => {
+    if (!live.assistantText) return;
+    const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
+    if (lastAssistant && lastAssistant.content.trim() === live.assistantText.trim()) {
+      setLive(initialLive());
+    }
+  }, [history, live.assistantText]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -262,7 +311,8 @@ function ConversationView({
           break;
         case "done":
           if (e.confirmationId == null) {
-            // 完全结束，重置 live
+            // 不立刻清空——等 history 重新拉取到相同内容后再清除，避免闪烁
+            return { ...prev, thinking: false };
           }
           break;
       }
@@ -368,9 +418,11 @@ function NewConversationView({ onCreated }: { onCreated: (id: string) => void })
           break;
         case "done":
           if (e.conversationId) {
+            // 先切换到新会话 ID → 父组件会渲染 ConversationView
+            // 此时 live 保持不变，ConversationView 的 useEffect 会在 history 追上后清除
             onCreated(e.conversationId);
           }
-          break;
+          return { ...prev, thinking: false };
       }
       return next;
     });
@@ -533,19 +585,116 @@ function HistoryBubble({ message }: { message: ChatMessage }) {
 
 function Bubble({ role, children }: { role: "user" | "assistant"; children: React.ReactNode }) {
   const isUser = role === "user";
+  const content = typeof children === "string" ? children : "";
   return (
     <div className={`mb-3 flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-line ${
           isUser
             ? "bg-zju-primary text-white"
-            : "bg-slate-100 text-slate-800"
+            : "prose-a:text-zju-primary prose prose-sm prose-slate max-w-none"
         }`}
       >
-        {children}
+        {isUser ? (
+          children
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{content}</ReactMarkdown>
+        )}
       </div>
     </div>
   );
+}
+
+/** 自定义 Markdown 组件：列表项渲染为卡片 */
+const markdownComponents: Components = {
+  ul({ children }) {
+    return <div className="space-y-1.5 my-2 not-prose">{children}</div>;
+  },
+  ol({ children }) {
+    return <div className="space-y-1.5 my-2 not-prose">{children}</div>;
+  },
+  li({ children }) {
+    // 提取列表项文本，第一行作为标题，后续行作为详情
+    const contentStr = extractText(children);
+    const firstBreak = contentStr.indexOf("\n");
+    const hasDetail = firstBreak > 0;
+    const detailText = hasDetail ? contentStr.slice(firstBreak + 1) : "";
+
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div className="text-xs font-medium text-slate-800">
+          {hasDetail ? renderFirstLine(children) : children}
+        </div>
+        {hasDetail && detailText && (
+          <div className="mt-0.5 text-[11px] text-slate-500 whitespace-pre-wrap">
+            {cleanMarkdown(detailText)}
+          </div>
+        )}
+      </div>
+    );
+  },
+  code({ children }) {
+    const text = String(children ?? "");
+    const isMultiLine = text.includes("\n");
+    if (isMultiLine) {
+      return (
+        <pre className="my-2 overflow-auto rounded-md bg-slate-800 p-3 text-xs text-emerald-100">
+          <code>{text}</code>
+        </pre>
+      );
+    }
+    return (
+      <code className="rounded bg-slate-200 px-1 py-0.5 text-xs font-mono text-slate-700">
+        {text}
+      </code>
+    );
+  },
+};
+
+/** 从 React children 中递归提取纯文本 */
+function extractText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    const props = (node as { props?: { children?: React.ReactNode } }).props;
+    if (props?.children) return extractText(props.children);
+  }
+  return "";
+}
+
+/** 只渲染 React children 中的第一行文本（直到 \n） */
+function renderFirstLine(node: React.ReactNode): React.ReactNode {
+  if (typeof node === "string") {
+    const idx = node.indexOf("\n");
+    return idx > 0 ? node.slice(0, idx) : node;
+  }
+  if (Array.isArray(node)) {
+    const results: React.ReactNode[] = [];
+    for (const child of node) {
+      if (typeof child === "string") {
+        const idx = child.indexOf("\n");
+        results.push(idx > 0 ? child.slice(0, idx) : child);
+        if (idx > 0) break;
+      } else {
+        results.push(child);
+        // Check if this child contains a newline
+        const t = extractText(child);
+        if (t.includes("\n")) break;
+      }
+    }
+    return results;
+  }
+  return node;
+}
+
+function cleanMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/`(.*?)`/g, "$1")
+    .trim();
 }
 
 function Composer({

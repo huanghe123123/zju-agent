@@ -137,7 +137,6 @@ export class CoursesService {
       }>;
     };
     return (json.homework_activities ?? [])
-      .filter((h) => !h.is_closed)
       .map((h) => ({
         id: String(h.id),
         courseId,

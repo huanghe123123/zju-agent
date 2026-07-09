@@ -28,17 +28,19 @@ export class ZdbkService {
   constructor(private zdbk: ZDBK) {}
 
   /**
-   * 考试安排。参考 fiz test.rs + CeleChron getExamsDto：
-   * POST 表单，过滤活跃学期。
+   * 考试安排。参照 Fiz test.rs get_tests（form body → 干净 JSON）：
+   *   POST /xskscx/kscx_cxXsgrksIndex.html?doType=query&gnmkdm=N509070&layout=default&su={stuId}
+   *   body: _search=false&nd=<ts>&queryModel.showCount=5000&...
+   * 同时保留 CeleChron 无-body 正则解析作为回退。
    * @param stuId 学号（= ZJU 用户名）
    * @param activeSemesters 活跃学期标识数组，形如 "2024-2025-2"
    */
   async getExams(stuId: string, activeSemesters: string[]): Promise<Exam[]> {
+    // 主路径：Fiz 风格的 form body POST，返回干净 JSON
     const url = `${BASE}/xskscx/kscx_cxXsgrksIndex.html?doType=query&gnmkdm=N509070&layout=default&su=${encodeURIComponent(stuId)}`;
     const form = new URLSearchParams({
       _search: "false",
       nd: String(Date.now()),
-      // CeleChron 用 5000，原 15 会漏掉考试
       "queryModel.showCount": "5000",
       "queryModel.currentPage": "1",
       "queryModel.sortName": "xkkh",
@@ -57,37 +59,56 @@ export class ZdbkService {
         { retryable: true },
       );
     }
-    const json = (await res.json()) as {
-      items?: Array<Record<string, unknown>>;
-    };
-    const items = json.items ?? [];
+    const text = await res.text();
+
+    // 解析：优先按干净 JSON（Fiz 路径），失败则回退到正则（CeleChron 路径）
+    let items: unknown[];
+    try {
+      const json = JSON.parse(text) as { items?: unknown[] };
+      items = json.items ?? [];
+    } catch {
+      // 回退：CeleChron 风格的正则提取
+      const itemsJson =
+        /(?<="items":)\[(.*?)\](?=,"limit")/.exec(text)?.[1];
+      if (itemsJson) {
+        try {
+          items = JSON.parse(`[${itemsJson}]`) as unknown[];
+        } catch {
+          return [];
+        }
+      } else {
+        return [];
+      }
+    }
     const exams: Exam[] = [];
     for (const item of items) {
-      const xkkh = String(item["xkkh"] ?? "");
-      // xkkh 形如 "2024-2025-2-1-0123"；切片 [1..12] 取 "2024-2025-2"
+      if (!item || typeof item !== "object") continue;
+      const r = item as Record<string, unknown>;
+      const xkkh = String(r["xkkh"] ?? "");
+      // xkkh 形如 "(2024-2025-2)-...-..."；切片 [1..12] 取 semesterId
       const semId = xkkh.slice(1, 12);
       if (!activeSemesters.includes(semId)) continue;
-      // 期末
-      const kssj = item["kssj"];
+      // 期末：kssj + jsmc + zwxh
+      const kssj = r["kssj"];
       if (kssj != null && kssj !== "") {
         exams.push({
-          id: `${semId}-${item["kcmc"] ?? ""}-期末`,
-          courseName: String(item["kcmc"] ?? ""),
-          time: kssj ? String(kssj) : undefined,
-          location: strOrUndef(item["jsmc"]),
-          seat: strOrUndef(item["zwxh"]),
+          id: `${semId}-${r["kcmc"] ?? ""}-期末`,
+          courseName: String(r["kcmc"] ?? ""),
+          time: parseExamDateTime(String(kssj)),
+          location: strOrUndef(r["jsmc"]),
+          seat: strOrUndef(r["zwxh"]),
           semester: semId,
         });
       }
-      // 期中
-      const qzkssj = item["qzkssj"];
+      // 期中：qzkssj + qzjsmc + qzzwxh
+      const qzkssj = r["qzkssj"];
       if (qzkssj != null && qzkssj !== "") {
         exams.push({
-          id: `${semId}-${item["kcmc"] ?? ""}-期中`,
-          courseName: String(item["kcmc"] ?? ""),
-          time: String(qzkssj),
-          location: strOrUndef(item["qzjsmc"]),
-          seat: strOrUndef(item["qzzwxh"]),
+          id: `${semId}-${r["kcmc"] ?? ""}-期中`,
+          courseName: String(r["kcmc"] ?? ""),
+          time: parseExamDateTime(String(qzkssj)),
+          location: strOrUndef(r["qzjsmc"]),
+          seat: strOrUndef(r["qzzwxh"]),
           semester: semId,
         });
       }
@@ -313,6 +334,29 @@ function weeksFromDsz(raw: unknown): number[] {
 function strOrUndef(v: unknown): string | undefined {
   if (v == null || v === "") return undefined;
   return String(v);
+}
+
+/**
+ * 解析教务网考试时间。
+ * 格式 1："2026年04月25日(14:00-16:00)" → ISO 8601
+ * 格式 2："第N天(HH:MM-HH:MM)"（日历来发布，用占位日期）
+ * 参照 CeleChron TimeHelper.parseExamDateTime 与 Fiz test.rs。
+ */
+function parseExamDateTime(raw: string): string {
+  // 格式 1：标准日期 + 时间
+  const m = /^(\d{4})年(\d{2})月(\d{2})日\((\d{2}):(\d{2})/.exec(raw);
+  if (m) {
+    const [, y, mo, d, h, mi] = m;
+    return `${y}-${mo}-${d}T${h}:${mi}:00+08:00`;
+  }
+  // 格式 2："第N天(HH:MM-HH:MM)" — 日历来发布，使用占位日期
+  const m2 = /第(\d+)天\((\d{2}):(\d{2})/.exec(raw);
+  if (m2) {
+    const [, day, h, mi] = m2;
+    return `1970-01-${String(day).padStart(2, "0")}T${h}:${mi}:00+08:00`;
+  }
+  // 无法解析则保留原文
+  return raw;
 }
 
 /**

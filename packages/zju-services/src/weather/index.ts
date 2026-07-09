@@ -1,7 +1,6 @@
 /**
  * 天气适配器。
- * 默认城市杭州。provider 可配置。
- * 未配置天气 API Key 时，使用免费公共接口。
+ * 默认城市杭州。使用 uapis.cn 免费公共接口。
  */
 
 import {
@@ -11,11 +10,12 @@ import {
   type WeatherNow,
 } from "@zju-agent/core";
 
+const BASE = "https://uapis.cn/api/v1/misc/weather";
+
 export class WeatherService {
   async getCurrent(city: string): Promise<WeatherNow> {
-    // 使用 wttr.in 免费公共接口（无需 API Key）
-    const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
     try {
+      const url = `${BASE}?city=${encodeURIComponent(city)}&extended=true`;
       const res = await fetch(url);
       if (!res.ok) {
         throw new AppError(
@@ -24,21 +24,26 @@ export class WeatherService {
         );
       }
       const json = (await res.json()) as {
-        current_condition?: Array<{
-          temp_C?: string;
+        now?: {
+          temp?: string;
           humidity?: string;
-          weatherDesc?: Array<{ value?: string }>;
-          windspeedKmph?: string;
-        }>;
+          text?: string;
+          windDir?: string;
+          windScale?: string;
+          windSpeed?: string;
+        };
+        updateTime?: string;
       };
-      const cur = json.current_condition?.[0];
+      const now = json.now;
       return {
         city,
-        temperature: cur?.temp_C ? Number(cur.temp_C) : undefined,
-        condition: cur?.weatherDesc?.[0]?.value,
-        humidity: cur?.humidity ? Number(cur.humidity) : undefined,
-        wind: cur?.windspeedKmph ? `${cur.windspeedKmph} km/h` : undefined,
-        updatedAt: new Date().toISOString(),
+        temperature: now?.temp ? Number(now.temp) : undefined,
+        condition: now?.text,
+        humidity: now?.humidity ? Number(now.humidity) : undefined,
+        wind: now?.windDir
+          ? `${now.windDir} ${now.windScale ?? ""}级`
+          : undefined,
+        updatedAt: json.updateTime ?? new Date().toISOString(),
       };
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -51,8 +56,8 @@ export class WeatherService {
   }
 
   async getForecast(city: string): Promise<WeatherForecast> {
-    const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
     try {
+      const url = `${BASE}?city=${encodeURIComponent(city)}&forecast=true`;
       const res = await fetch(url);
       if (!res.ok) {
         throw new AppError(
@@ -61,20 +66,20 @@ export class WeatherService {
         );
       }
       const json = (await res.json()) as {
-        weather?: Array<{
+        forecast?: Array<{
           date?: string;
-          mintempC?: string;
-          maxtempC?: string;
-          hourly?: Array<{ weatherDesc?: Array<{ value?: string }> }>;
+          tempMax?: string;
+          tempMin?: string;
+          textDay?: string;
         }>;
       };
       return {
         city,
-        days: (json.weather ?? []).map((d) => ({
+        days: (json.forecast ?? []).map((d) => ({
           date: d.date ?? "",
-          high: d.maxtempC ? Number(d.maxtempC) : undefined,
-          low: d.mintempC ? Number(d.mintempC) : undefined,
-          condition: d.hourly?.[0]?.weatherDesc?.[0]?.value,
+          high: d.tempMax ? Number(d.tempMax) : undefined,
+          low: d.tempMin ? Number(d.tempMin) : undefined,
+          condition: d.textDay,
         })),
       };
     } catch (err) {

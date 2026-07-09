@@ -5,9 +5,10 @@ const HomePage = lazy(() => import("../pages/Chat.js").then((m) => ({ default: m
 const SetupPage = lazy(() => import("../pages/Setup.js").then((m) => ({ default: m.SetupPage })));
 const CoursesPage = lazy(() => import("../pages/Courses.js").then((m) => ({ default: m.CoursesPage })));
 const AssignmentsPage = lazy(() => import("../pages/Assignments.js").then((m) => ({ default: m.AssignmentsPage })));
-const ClassroomPage = lazy(() => import("../pages/Classroom.js").then((m) => ({ default: m.ClassroomPage })));
 const ExamsPage = lazy(() => import("../pages/Exams.js").then((m) => ({ default: m.ExamsPage })));
+const ToolboxPage = lazy(() => import("../pages/Toolbox.js").then((m) => ({ default: m.ToolboxPage })));
 const DownloadsPage = lazy(() => import("../pages/Downloads.js").then((m) => ({ default: m.DownloadsPage })));
+const ClassroomPage = lazy(() => import("../pages/Classroom.js").then((m) => ({ default: m.ClassroomPage })));
 const SettingsPage = lazy(() => import("../pages/Settings.js").then((m) => ({ default: m.SettingsPage })));
 
 function withSuspense(element: React.ReactNode) {
@@ -19,8 +20,9 @@ export const routes: RouteObject[] = [
   { path: "/setup", element: withSuspense(<SetupPage />) },
   { path: "/courses", element: withSuspense(<CoursesPage />) },
   { path: "/assignments", element: withSuspense(<AssignmentsPage />) },
-  { path: "/classroom", element: withSuspense(<ClassroomPage />) },
   { path: "/exams", element: withSuspense(<ExamsPage />) },
+  { path: "/toolbox", element: withSuspense(<ToolboxPage />) },
   { path: "/downloads", element: withSuspense(<DownloadsPage />) },
+  { path: "/classroom", element: withSuspense(<ClassroomPage />) },
   { path: "/settings", element: withSuspense(<SettingsPage />) },
 ];

@@ -19,7 +19,7 @@ import type {
 } from "@zju-agent/core";
 import type { ServicesContainer } from "../services.js";
 import type { ServerConfig } from "../config/env.js";
-import { activeXnxq01ids } from "@zju-agent/zju-services";
+import { activeXnxq01ids, semesterToXnxq01id } from "@zju-agent/zju-services";
 import { logger } from "../config/logger.js";
 
 export type ToolDeps = ServicesContainer & { config: ServerConfig };
@@ -45,6 +45,29 @@ function activeIds(semesters: Semester[]): string[] {
   return activeXnxq01ids(semesters);
 }
 
+/** 选取目标学期：活跃 → 最近（与路由 pickSemester 保持一致） */
+function pickTargetSemester(
+  semesters: Semester[],
+  requested?: string,
+): string | undefined {
+  if (requested) {
+    // 验证请求的学期是否存在于已知列表中
+    for (const s of semesters) {
+      if (semesterToXnxq01id(s.name) === requested) return requested;
+    }
+  }
+  const active = activeIds(semesters);
+  if (active.length > 0) return active[0];
+  // 无活跃学期 → 取最近一次
+  const ids = new Map<string, Semester>();
+  for (const s of semesters) {
+    const id = semesterToXnxq01id(s.name);
+    if (id) ids.set(id, s);
+  }
+  const sorted = [...ids.keys()].sort((a, b) => b.localeCompare(a));
+  return sorted[0];
+}
+
 /** 工厂：构建工具实例。依赖运行时服务，故每次请求构建一次。 */
 export function buildTools(deps: ToolDeps): AgentTool[] {
   return [
@@ -55,6 +78,7 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
     makeGetExams(deps),
     makeGetTimetable(deps),
     makeDownloadCourseMaterial(deps),
+    makeBatchDownload(deps),
     makeGetWeather(deps),
   ];
 }
@@ -63,25 +87,30 @@ export function buildTools(deps: ToolDeps): AgentTool[] {
 
 function makeGetCourses(deps: ToolDeps): AgentTool {
   return {
-    // 工具名只能含 [a-zA-Z0-9_-]：OpenAI/Anthropic 均拒绝带点的 function.name
     name: "zju_get_courses",
     description:
-      "查询当前学期的课程列表（学在浙大）。返回课程 id、名称、学期、教学班。用户询问“我有哪些课”“这学期课程”时调用。",
+      "查询课程列表（学在浙大）。返回课程 id、名称、学期、教学班。默认返回所有学期课程，也可指定 semester 过滤（格式 \"2024-2025-1\"=秋冬 或 \"2024-2025-2\"=春夏）。用户询问\"我有哪些课\"\"这学期课程\"时调用。",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id，如 \"2024-2025-2\"。不传则返回所有学期课程。",
+        },
+      },
       additionalProperties: false,
     },
     riskLevel: "read",
     requiresConfirmation: false,
-    async execute(_input, ctx): Promise<ToolResult> {
+    async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
+        const semesterId = (input as { semester?: string } | null)?.semester;
         const cached = deps.cache.get("courses:list");
-        if (cached) return cached;
+        if (cached) return semesterId ? filterBySemester(cached as Course[], semesterId) : cached;
         const adapters = await deps.auth.getServiceAdapters();
         const courses = await adapters.courses.getCourses();
         deps.cache.set("courses:list", courses);
-        return courses;
+        return semesterId ? filterBySemester(courses, semesterId) : courses;
       });
     },
   };
@@ -208,19 +237,24 @@ function makeGetExams(deps: ToolDeps): AgentTool {
   return {
     name: "zju_get_exams",
     description:
-      "查询考试安排（教务网）。返回活跃学期的期末与期中考试，含时间、地点、座位号，按时间升序。用户问“我有什么考试”“考试安排”时调用。",
+      "查询考试安排（教务网）。返回期末与期中考试，含时间、地点、座位号，按时间升序。默认返回当前学期，也可通过 semester 指定学期（格式 \"2024-2025-2\"=春夏）。用户问“我有什么考试”“考试安排”“上学期考了什么”时调用。",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id，如 \"2024-2025-2\"。不传则取当前活跃学期。",
+        },
+      },
       additionalProperties: false,
     },
     riskLevel: "read",
     requiresConfirmation: false,
-    async execute(_input, ctx): Promise<ToolResult> {
+    async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
         const { stuId, semesters } = await resolveStuAndSemesters(deps);
-        const ids = activeIds(semesters);
-        const target = ids[0];
+        const reqSemester = (input as { semester?: string } | null)?.semester;
+        const target = pickTargetSemester(semesters, reqSemester);
         if (!target) return [];
         const cacheKey = `zdbk:exams:${target}`;
         const cached = deps.cache.get(cacheKey);
@@ -238,19 +272,24 @@ function makeGetTimetable(deps: ToolDeps): AgentTool {
   return {
     name: "zju_get_timetable",
     description:
-      "查询课程表（教务网）。返回活跃学期的课表条目，含课程名、教师、地点、星期、节次、周次。用户问“我有什么课”“课表”“明天有什么课”时调用。",
+      "查询课程表（教务网）。返回课表条目，含课程名、教师、地点、星期、节次、周次。默认返回当前学期，也可通过 semester 指定学期（格式 \"2024-2025-1\"=秋冬）。用户问“我有什么课”“课表”“明天有什么课”“上学期课表”时调用。",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id，如 \"2024-2025-1\"。不传则取当前活跃学期。",
+        },
+      },
       additionalProperties: false,
     },
     riskLevel: "read",
     requiresConfirmation: false,
-    async execute(_input, ctx): Promise<ToolResult> {
+    async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
         const { stuId, semesters } = await resolveStuAndSemesters(deps);
-        const ids = activeIds(semesters);
-        const xnxq = ids[0];
+        const reqSemester = (input as { semester?: string } | null)?.semester;
+        const xnxq = pickTargetSemester(semesters, reqSemester);
         if (!xnxq) return [];
         const cacheKey = `zdbk:timetable:${xnxq}`;
         const cached = deps.cache.get(cacheKey);
@@ -301,7 +340,7 @@ export function makeDownloadCourseMaterial(deps: ToolDeps): AgentTool {
   return {
     name: "zju_download_course_material",
     description:
-      "下载某门课程资料中的指定文件到本地下载目录。需明确 courseId、fileId（文件的 upload id，非 referenceId）、fileName。下载是外部网络操作，执行前需用户确认。",
+      "下载单个课程资料文件到本地。需 courseId、fileId（upload id 非 referenceId）、fileName。仅用于下载 1-2 个文件；如需批量下载多个文件，请用 zju_batch_download 一次性提交，避免逐个确认。",
     inputSchema: {
       type: "object",
       properties: {
@@ -381,7 +420,151 @@ export function makeDownloadCourseMaterial(deps: ToolDeps): AgentTool {
   };
 }
 
+/**
+ * 批量下载课程资料。一次确认即可下载多个文件，无需逐个确认。
+ * 每个文件独立下载，单个失败不影响其他文件。
+ */
+function makeBatchDownload(deps: ToolDeps): AgentTool {
+  return {
+    name: "zju_batch_download",
+    description:
+      "批量下载多个课程资料文件到本地。一次确认即可完成全部下载，无需逐个确认。用户说【下载所有课件】【把这门课的资料都下载下来】时优先使用本工具。每个文件需 courseId、fileId（upload id 非 referenceId）、fileName。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        files: {
+          type: "array",
+          description: "要下载的文件列表",
+          items: {
+            type: "object",
+            properties: {
+              courseId: { type: "string" },
+              materialId: { type: "string" },
+              fileId: { type: "string", description: "文件的 upload id（CourseFile.id），非 referenceId" },
+              fileName: { type: "string", description: "保存的文件名" },
+              officePdf: { type: "boolean", description: "Office 文件是否取 PDF 预览版，默认 false" },
+            },
+            required: ["courseId", "fileId", "fileName"],
+            additionalProperties: false,
+          },
+          minItems: 1,
+          maxItems: 50,
+        },
+      },
+      required: ["files"],
+      additionalProperties: false,
+    },
+    riskLevel: "external_download",
+    requiresConfirmation: true,
+    async execute(input, ctx): Promise<ToolResult> {
+      return runRead(ctx, async () => {
+        const body = input as {
+          files: Array<{
+            courseId: string;
+            materialId?: string;
+            fileId: string;
+            fileName: string;
+            officePdf?: boolean;
+          }>;
+        };
+        if (!body.files || body.files.length === 0) {
+          return {
+            ok: false,
+            error: { code: "TOOL_INPUT_INVALID", message: "files 数组不能为空" },
+          };
+        }
+        const adapters = await deps.auth.getServiceAdapters();
+        const { writeDownloadStream } = await import("../util/download.js");
+
+        const results: Array<{
+          fileId: string;
+          fileName: string;
+          success: boolean;
+          filePath?: string;
+          size?: number;
+          error?: string;
+        }> = [];
+
+        for (const f of body.files) {
+          try {
+            const safeName = sanitizeFileName(f.fileName);
+            const subdir = sanitizeDir(f.materialId || f.courseId);
+            const streamResult = await writeDownloadStream({
+              stream: async () => {
+                const file = await adapters.courses.fetchFile(f.fileId, {
+                  officePdf: f.officePdf,
+                });
+                return file.stream;
+              },
+              downloadDir: deps.config.downloadDir,
+              subdir,
+              fileName: safeName,
+            });
+            const record = deps.downloads.create({
+              source: "courses",
+              fileName: streamResult.fileName,
+              filePath: streamResult.filePath,
+              status: "completed",
+              size: streamResult.size,
+              mimeType: streamResult.contentType,
+              courseId: f.courseId,
+              materialId: f.materialId,
+              fileId: f.fileId,
+            });
+            deps.audit.log({
+              action: "download",
+              riskLevel: "external_download",
+              inputSummary: `batch/${f.courseId}/${f.fileId}/${safeName}`,
+              confirmed: true,
+              result: "ok",
+            });
+            results.push({
+              fileId: f.fileId,
+              fileName: safeName,
+              success: true,
+              filePath: record.filePath,
+              size: record.size,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.warn("批量下载单文件失败", { fileId: f.fileId, fileName: f.fileName, message });
+            results.push({
+              fileId: f.fileId,
+              fileName: f.fileName,
+              success: false,
+              error: message,
+            });
+          }
+        }
+
+        const succeeded = results.filter((r) => r.success).length;
+        const failed = results.filter((r) => !r.success).length;
+        return {
+          summary: `批量下载完成：${succeeded} 成功，${failed} 失败`,
+          results,
+        };
+      });
+    },
+  };
+}
+
 // ---------- 辅助 ----------
+
+/** 按学期过滤课程（学期 id 后缀 "-2" 映射春夏学期） */
+function filterBySemester(courses: Course[], semesterId: string): Course[] {
+  // 学在浙大学期 id 形如 "xxx2024-2025-2xxx" 或 "xxx2024-2025-1xxx"
+  // 教务网格式 "2024-2025-2"
+  const [year, term] = semesterId.split("-").filter(Boolean);
+  // 构建可能的学在浙大学期 id 前缀匹配
+  return courses.filter((c) => {
+    const sid = c.semesterId;
+    // 教务网 "2024-2025-2" → 学在浙大可能包含 "2024-2025" 和第2学期特征
+    return (
+      sid.includes(`${year}-${Number(year) + 1}`) &&
+      (term === "2" ? /春|夏/.test(sid) || sid.endsWith("-2") : /秋|冬|短/.test(sid) || sid.endsWith("-1"))
+    );
+  });
+}
 
 /** 包裹读取类工具的执行：把 AppError 转 ToolResult，日志脱敏 */
 async function runRead(
