@@ -1,0 +1,25 @@
+{
+  "name": "zju-campus-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "浙江大学校园智能 Agent — 本地优先的校园智能助手",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter=./apps/* --filter=./packages/* run dev",
+    "dev:web": "pnpm --filter @zju-agent/web dev",
+    "dev:server": "pnpm --filter @zju-agent/server dev",
+    "build": "pnpm -r run build",
+    "build:web": "pnpm --filter @zju-agent/web build",
+    "build:server": "pnpm --filter @zju-agent/server build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r exec rm -rf dist build .tsbuildinfo node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

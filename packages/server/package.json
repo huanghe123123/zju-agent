@@ -1,0 +1,32 @@
+{
+  "name": "@zju-agent/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@zju-agent/core": "workspace:*",
+    "@zju-agent/llm": "workspace:*",
+    "@zju-agent/zju-services": "workspace:*",
+    "@zju-agent/storage": "workspace:*",
+    "fastify": "^5.10.0",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/multipart": "^10.1.0",
+    "zod": "^3.25.76",
+    "better-sqlite3": "^12.11.1",
+    "login-zju": "^1.0.9",
+    "nanoid": "^5.0.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/better-sqlite3": "^7.6.11",
+    "tsx": "^4.19.1",
+    "typescript": "^5.9.3"
+  }
+}
