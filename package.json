@@ -1,0 +1,63 @@
+{
+  "name": "zju-agent",
+  "version": "0.1.0",
+  "description": "Windows desktop campus assistant for Zhejiang University students.",
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "main": "dist-electron/main/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"tsc -p tsconfig.main.json --watch\" \"wait-on tcp:5173 dist-electron/main/main.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc -p tsconfig.main.json && vite build",
+    "preview": "pnpm run build && electron .",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "package:portable": "pnpm run build && electron-builder --win portable --x64"
+  },
+  "keywords": [
+    "zju",
+    "electron",
+    "campus-assistant"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.19",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "edu.zju.zju-agent",
+    "productName": "ZJU Agent",
+    "directories": {
+      "output": "release"
+    },
+    "compression": "store",
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
+    "files": [
+      "dist-electron/**/*",
+      "dist/renderer/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "ZJU-Agent-${version}-portable.exe"
+    }
+  }
+}
