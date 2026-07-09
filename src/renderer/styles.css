@@ -1,0 +1,399 @@
+:root {
+  color-scheme: dark;
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  background: #08090b;
+  color: #f4f4f6;
+  --canvas: #08090b;
+  --surface: #101113;
+  --surface-2: #15171a;
+  --surface-3: #1b1e22;
+  --hairline: #2a2e35;
+  --hairline-strong: #3a404a;
+  --ink: #f4f4f6;
+  --muted: #9ca3ad;
+  --dim: #6e7683;
+  --zju-blue: #2f7cff;
+  --zju-red: #d91f2d;
+  --green: #5bd69b;
+  --yellow: #f6c65b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 960px;
+  min-height: 640px;
+  background: var(--canvas);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 18px;
+  background: #07080a;
+  border-right: 1px solid var(--hairline);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--zju-blue), #0a3d99 48%, var(--zju-red));
+  font-weight: 800;
+}
+
+.brand strong,
+.brand span {
+  display: block;
+}
+
+.brand span,
+.sidebar-panel p,
+.metric-card p,
+.row-item p,
+.timeline-item p,
+.resource-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.nav-list {
+  display: grid;
+  gap: 6px;
+}
+
+.nav-list button {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #cdd3dc;
+  text-align: left;
+}
+
+.nav-list button.active,
+.nav-list button:hover {
+  background: var(--surface-2);
+  border-color: var(--hairline);
+  color: var(--ink);
+}
+
+.sidebar-panel {
+  margin-top: auto;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.panel-label,
+.eyebrow,
+.metric-card span,
+.panel-head span {
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.sidebar-panel strong {
+  display: block;
+  margin: 8px 0 6px;
+}
+
+.workspace {
+  padding: 30px 32px;
+  overflow: auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 26px;
+}
+
+.topbar h1 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.primary-button,
+.ghost-button,
+.icon-button {
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.primary-button {
+  min-height: 38px;
+  padding: 0 15px;
+  background: #f4f4f6;
+  color: #06070a;
+  font-weight: 650;
+}
+
+.ghost-button,
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.primary-button:active,
+.ghost-button:active,
+.icon-button:active {
+  transform: scale(0.97);
+}
+
+.wide {
+  width: 100%;
+}
+
+.login-stage {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 150px);
+}
+
+.login-card {
+  width: min(440px, 100%);
+  padding: 28px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.login-card h2 {
+  margin: 8px 0 8px;
+  font-size: 25px;
+  letter-spacing: 0;
+}
+
+.login-card p {
+  margin: 0 0 22px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.login-card label {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: #d8dde6;
+  font-size: 14px;
+}
+
+.login-card input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  outline: none;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.login-card input:focus {
+  border-color: #5d8cff;
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.metric-card,
+.work-panel,
+.row-item,
+.timeline-item,
+.resource-row {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.metric-card {
+  min-height: 146px;
+  padding: 18px;
+  border-radius: 10px;
+}
+
+.metric-card strong {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.urgent-card {
+  background:
+    linear-gradient(135deg, rgba(217, 31, 45, 0.16), transparent 55%),
+    var(--surface);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.work-panel,
+.panel-list,
+.timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.work-panel {
+  padding: 14px;
+  border-radius: 10px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 8px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.row-item,
+.timeline-item,
+.resource-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.row-item {
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--zju-red);
+}
+
+.dot.done {
+  background: var(--green);
+}
+
+.chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: #dce3ee;
+  font-size: 12px;
+}
+
+.timeline-item {
+  grid-template-columns: 116px minmax(0, 1fr) 44px;
+}
+
+.timeline-item time {
+  color: #dce3ee;
+  font-size: 13px;
+}
+
+.timeline-item > span {
+  color: var(--yellow);
+  font-size: 12px;
+  text-align: right;
+}
+
+.timeline-item.exam > span {
+  color: #ff7b86;
+}
+
+.resource-row {
+  grid-template-columns: 48px minmax(0, 1fr) 38px;
+}
+
+.file-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: rgba(47, 124, 255, 0.16);
+  color: #9fc0ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.file-mark.live {
+  background: rgba(217, 31, 45, 0.18);
+  color: #ff9aa3;
+}
+
+.file-mark.replay {
+  background: rgba(91, 214, 155, 0.14);
+  color: #8df0bd;
+}
+
+.file-mark.material {
+  background: rgba(246, 198, 91, 0.14);
+  color: #f8d781;
+}
+
+@media (max-width: 1040px) {
+  .hero-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
