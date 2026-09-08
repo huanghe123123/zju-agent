@@ -1,12 +1,12 @@
 import { type ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { FloatingChat } from "./FloatingChat.js";
 
 const NAV_ITEMS: { to: string; label: string; icon: string; end?: boolean }[] = [
   { to: "/", label: "首页", icon: "🏠", end: true },
   { to: "/courses", label: "课程", icon: "📚" },
   { to: "/assignments", label: "作业", icon: "📝" },
   { to: "/exams", label: "考试", icon: "📋" },
-  { to: "/toolbox", label: "百宝箱", icon: "🧰" },
 ];
 
 export function Layout({
@@ -21,12 +21,13 @@ export function Layout({
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       {/* === 桌面端左侧导航栏 === */}
-      <aside className="hidden shrink-0 border-r border-slate-200 bg-white p-4 lg:flex lg:w-52 lg:flex-col">
+      <aside className="hidden shrink-0 border-r border-slate-200 bg-white p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-52 lg:flex-col">
         <div className="mb-6">
           <div className="text-lg font-semibold text-zju-primary">浙大校园助手</div>
           <div className="text-xs text-slate-500">ZJU Campus Agent</div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1">
+
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
@@ -45,8 +46,8 @@ export function Layout({
             </NavLink>
           ))}
         </nav>
-        {/* 底部：下载 + 设置并排 */}
-        <div className="mt-auto flex gap-1">
+        {/* 底部：下载 + 设置并排（固定在左下角） */}
+        <div className="mt-auto pt-3 border-t border-slate-100 flex gap-1">
           <NavLink
             to="/downloads"
             className={({ isActive }) =>
@@ -83,7 +84,7 @@ export function Layout({
 
       {/* === 桌面端右侧辅助面板 === */}
       {rightPanel && (
-        <aside className="hidden shrink-0 border-l border-slate-200 bg-white p-4 lg:block lg:w-72 xl:w-80">
+        <aside className="hidden shrink-0 border-l border-slate-200 bg-white p-4 lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto lg:w-72 xl:w-80">
           {rightPanel}
         </aside>
       )}
@@ -130,7 +131,7 @@ export function Layout({
             className={({ isActive }) =>
               `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
                 isActive
-                  ? "text-zju-primary"
+                  ? "text-zju-primary font-semibold"
                   : "text-slate-500 hover:text-slate-700"
               }`
             }
@@ -139,13 +140,26 @@ export function Layout({
             <span>{item.label}</span>
           </NavLink>
         ))}
-        {/* 移动端设置入口 */}
+        {/* 移动端下载与设置入口 */}
+        <NavLink
+          to="/downloads"
+          className={({ isActive }) =>
+            `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
+              isActive
+                ? "text-zju-primary font-semibold"
+                : "text-slate-500 hover:text-slate-700"
+            }`
+          }
+        >
+          <span className="text-lg">📁</span>
+          <span>下载</span>
+        </NavLink>
         <NavLink
           to="/settings"
           className={({ isActive }) =>
             `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
               isActive
-                ? "text-zju-primary"
+                ? "text-zju-primary font-semibold"
                 : "text-slate-500 hover:text-slate-700"
             }`
           }
@@ -154,6 +168,9 @@ export function Layout({
           <span>设置</span>
         </NavLink>
       </nav>
+
+      {/* === 全局浮动 AI 对话窗口 === */}
+      <FloatingChat />
     </div>
   );
 }

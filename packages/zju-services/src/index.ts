@@ -12,9 +12,9 @@ import type { ZJUAM, COURSES, ZDBK, CLASSROOM } from "login-zju";
 import { AppError, ErrorCode } from "@zju-agent/core";
 import { CoursesService } from "./courses/index.js";
 import { ClassroomService } from "./classroom/index.js";
-import { ZdbkService, semesterToXnxq01id, activeXnxq01ids } from "./zdbk/index.js";
+import { ZdbkService, semesterToXnxq01id, activeXnxq01ids, getAcademicPeriod, currentXnxq01id } from "./zdbk/index.js";
 import { NetworkService } from "./network/index.js";
-import { WeatherService } from "./weather/index.js";
+import { CalendarService } from "./calendar/index.js";
 
 export type ZjuServiceInstances = {
   am: ZJUAM;
@@ -28,7 +28,7 @@ export type ZjuServiceAdapters = {
   classroom: ClassroomService;
   zdbk: ZdbkService;
   network: NetworkService;
-  weather: WeatherService;
+  calendar: CalendarService;
 };
 
 export interface ZjuServices {
@@ -46,34 +46,57 @@ export function createZjuServices(): ZjuServices {
   return new ZjuServicesImpl();
 }
 
+/**
+ * login-zju 无日志开关，会在 stdout 打印含 CAS ticket/oauth code 的
+ * 重定向 URL（票据泄露面）。登录期间临时静音 console.log；
+ * 用串行队列保证并发请求下不相互污染。
+ */
+let quietQueue: Promise<unknown> = Promise.resolve();
+
+function runQuiet<T>(fn: () => Promise<T>): Promise<T> {
+  const run = quietQueue.then(async () => {
+    const orig = console.log;
+    try {
+      console.log = () => {};
+      return await fn();
+    } finally {
+      console.log = orig;
+    }
+  });
+  quietQueue = run.catch(() => undefined);
+  return run;
+}
+
 class ZjuServicesImpl implements ZjuServices {
   private instances: ZjuServiceInstances | null = null;
   private adapters: ZjuServiceAdapters | null = null;
 
   async loginZjuam(username: string, password: string): Promise<boolean> {
-    const { ZJUAM } = await import("login-zju");
-    const am = new ZJUAM(username, password);
-    try {
-      // login-zju 的 login() 返回重定向 URL 或抛错
-      await am.login();
-      this.instances = await this.buildInstances(am);
-      this.adapters = {
-        courses: new CoursesService(this.instances.courses),
-        classroom: new ClassroomService(this.instances.classroom),
-        zdbk: new ZdbkService(this.instances.zdbk),
-        network: new NetworkService(),
-        weather: new WeatherService(),
-      };
-      return true;
-    } catch (err) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? String((err as { message?: unknown }).message)
-          : "统一身份认证失败。";
-      throw new AppError(ErrorCode.ZJU_AUTH_FAILED, message, {
-        retryable: true,
-      });
-    }
+    return runQuiet(async () => {
+      const { ZJUAM } = await import("login-zju");
+      const am = new ZJUAM(username, password);
+      try {
+        // login-zju 的 login() 返回重定向 URL 或抛错
+        await am.login();
+        this.instances = await this.buildInstances(am);
+        this.adapters = {
+          courses: new CoursesService(this.instances.courses),
+          classroom: new ClassroomService(this.instances.classroom),
+          zdbk: new ZdbkService(this.instances.zdbk),
+          network: new NetworkService(),
+          calendar: new CalendarService(),
+        };
+        return true;
+      } catch (err) {
+        const message =
+          err && typeof err === "object" && "message" in err
+            ? String((err as { message?: unknown }).message)
+            : "统一身份认证失败。";
+        throw new AppError(ErrorCode.ZJU_AUTH_FAILED, message, {
+          retryable: true,
+        });
+      }
+    });
   }
 
   async getInstances(
@@ -118,7 +141,9 @@ export {
   ClassroomService,
   ZdbkService,
   NetworkService,
-  WeatherService,
+  CalendarService,
   semesterToXnxq01id,
   activeXnxq01ids,
+  getAcademicPeriod,
+  currentXnxq01id,
 };

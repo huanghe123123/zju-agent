@@ -11,8 +11,6 @@ export type ServerConfig = {
   downloadDir: string;
   /** 本地访问 token，前端调用 API 必须携带 */
   accessToken: string;
-  /** 开发期回退 token，当 settings.accessToken 未生成时使用 */
-  devToken: string;
   isDev: boolean;
 };
 
@@ -51,9 +49,6 @@ export function loadConfig(appDir: string): ServerConfig {
     writeFileSync(tokenFile, accessToken, { mode: 0o600 });
   }
 
-  // 开发期固定回退 token，便于前端在首次未读到 token 时连接
-  const devToken = "dev-local-token-zju-agent";
-
   const downloadDir = join(appDir, "downloads");
   if (!existsSync(downloadDir)) {
     mkdirSync(downloadDir, { recursive: true });
@@ -66,7 +61,17 @@ export function loadConfig(appDir: string): ServerConfig {
     dbPath: join(appDir, "agent.db"),
     downloadDir,
     accessToken,
-    devToken,
     isDev,
   };
+}
+
+/**
+ * 轮换本地访问 token：生成新随机值、写入 .token 文件（0o600），
+ * 并同步更新内存中的 config，使旧 token 立即失效。
+ */
+export function rotateAccessToken(config: ServerConfig): string {
+  const token = randomBytes(24).toString("hex");
+  writeFileSync(join(config.appDir, ".token"), token, { mode: 0o600 });
+  config.accessToken = token;
+  return token;
 }

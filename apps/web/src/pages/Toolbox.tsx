@@ -10,14 +10,6 @@ const CARDS = [
     available: false,
   },
   {
-    title: "天气查询",
-    description: "查询当前天气与未来预报，默认杭州",
-    icon: "🌤️",
-    to: null,
-    available: true,
-    hint: "可在 AI 助手中询问天气",
-  },
-  {
     title: "校网充值",
     description: "查询校网状态、余额、发起充值",
     icon: "💳",

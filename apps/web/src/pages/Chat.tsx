@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { Layout, RightPanel } from "../components/Layout.js";
+import { useApiFetch } from "../api/bootstrap.js";
+import { useAuthStatus } from "../api/auth.js";
 import {
   useConversations,
   useConversation,
@@ -13,10 +16,11 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from "../api/agent.js";
-import { useAllAssignments, useExams, useTimetable, useCourses, useSemesters } from "../api/zju.js";
-import { useQuery } from "@tanstack/react-query";
-import { useApiFetch } from "../api/bootstrap.js";
-import type { ApiResponse, AuthStatus } from "@zju-agent/core";
+import {
+  useAllAssignments,
+  useExams,
+  useUpcomingSchedule48h,
+} from "../api/zju.js";
 
 type PendingConfirmation = {
   confirmationId: string;
@@ -113,134 +117,292 @@ export function ChatPage() {
   );
 }
 
-/** 右栏 Dashboard 面板 */
+/** 右栏 Dashboard 面板（Celechron 48小时日程流 + 48小时折叠作业） */
 function DashboardPanel() {
   const apiFetch = useApiFetch();
-  const { data: authStatus, isLoading: authLoading } = useQuery({
-    queryKey: ["auth", "status"],
-    queryFn: async () => {
-      const res = await apiFetch("/api/auth/status");
-      const json = (await res.json()) as ApiResponse<AuthStatus>;
-      if (!json.ok) throw new Error(json.error.message);
-      return json.data;
-    },
-  });
-  const loggedIn = authStatus?.ok ?? false;
-
+  const { data: upcomingData, isLoading: scheduleLoading } = useUpcomingSchedule48h();
   const { data: assignments } = useAllAssignments();
   const { data: exams } = useExams();
-  const { data: timetable } = useTimetable();
-  const { data: courses } = useCourses();
-  const { data: semesters } = useSemesters();
-  const hasActiveSemester = (semesters ?? []).some((s) => s.isActive);
+  const { data: authStatus, isLoading: authLoading } = useAuthStatus();
+  const loggedIn = authStatus?.ok ?? false;
 
-  const pendingCount = (assignments ?? []).filter((a) => !a.submitted).length;
-  const overdueCount = (assignments ?? [])
-    .filter((a) => !a.submitted && a.deadline)
-    .filter((a) => Date.parse(a.deadline!) < Date.now()).length;
+  const { data: settingsData, isLoading: settingsLoading } = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/settings");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "加载设置失败");
+      return json.data as {
+        modelProviders?: Array<{
+          id: string;
+          name: string;
+          protocol: string;
+          baseUrl: string;
+          model: string;
+          enabled: boolean;
+        }>;
+        credentials?: {
+          hasZjuCredential: boolean;
+          zjuUsernameMasked?: string;
+          hasModelApiKey: boolean;
+          modelProviderName?: string;
+        };
+      };
+    },
+  });
 
-  const today = new Date();
-  const weekday = today.getDay() === 0 ? 7 : today.getDay();
-  const todayCourseCount = (timetable ?? []).filter((e) => e.weekday === weekday).length;
+  const activeProvider =
+    settingsData?.modelProviders?.find((p) => p.enabled) ??
+    settingsData?.modelProviders?.[0];
+  const hasModelConfigured =
+    settingsData?.credentials?.hasModelApiKey || !!activeProvider?.name;
 
-  const now = Date.now();
-  const weekLater = now + 7 * 24 * 3600_000;
-  const upcomingExamCount = (exams ?? []).filter(
-    (e) => e.time && Date.parse(e.time) >= now && Date.parse(e.time) <= weekLater,
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const [assignmentsCollapsed, setAssignmentsCollapsed] = useState(true);
+
+  const activePeriod = upcomingData?.activePeriod;
+  const laterPeriods = upcomingData?.laterPeriods ?? [];
+  const assignments48h = upcomingData?.assignments48h ?? [];
+  const dateInfo = upcomingData?.dateInfo;
+
+  const activePending = (assignments ?? []).filter(
+    (a) => !a.submitted && (!a.deadline || Date.parse(a.deadline) > nowMs),
+  );
+  const overdueCount = (assignments ?? []).filter(
+    (a) => !a.submitted && a.deadline && Date.parse(a.deadline) <= nowMs,
   ).length;
+  const totalPending = activePending.length;
+  const totalExams = (exams ?? []).length;
 
   return (
-    <RightPanel title="📊 Dashboard">
-      <div className="space-y-3">
-        <DashCard
-          title="今日课程"
-          value={loggedIn && hasActiveSemester ? `${todayCourseCount} 节` : "—"}
-          hint={loggedIn && hasActiveSemester ? "点击查看课表" : "非学期或未登录"}
-          to="/courses"
-          highlight={false}
-        />
-        <DashCard
-          title="待办作业"
-          value={loggedIn ? `${pendingCount} 项` : "—"}
-          hint={
-            loggedIn
-              ? overdueCount > 0
-                ? `${overdueCount} 项已逾期`
-                : "点击查看详情"
-              : "登录后展示"
-          }
-          to="/assignments"
-          highlight={overdueCount > 0}
-        />
-        <DashCard
-          title="近期考试"
-          value={loggedIn ? `${upcomingExamCount} 场` : "—"}
-          hint={loggedIn ? "未来 7 天内" : "登录后展示"}
-          to="/exams"
-          highlight={false}
-        />
-        <DashCard
-          title="课程总数"
-          value={loggedIn && hasActiveSemester ? `${(courses ?? []).length} 门` : "—"}
-          hint={loggedIn && hasActiveSemester ? "点击查看课程资料" : "非学期或未登录"}
-          to="/courses"
-          highlight={false}
-        />
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <div className="text-xs text-slate-400">天气</div>
-          <div className="my-1 font-semibold text-slate-700">—</div>
-          <div className="text-[11px] text-slate-400">在 AI 助手中询问天气</div>
+    <RightPanel title="📊 校园看板">
+      <div className="space-y-3.5">
+        {/* 校历时间坐标 */}
+        {dateInfo && (
+          <div className="rounded-xl bg-slate-100 p-2.5 text-xs text-slate-700 space-y-1">
+            <div className="flex items-center justify-between font-semibold">
+              <span>{dateInfo.academicYear}学年 {dateInfo.term}</span>
+              <span className="rounded bg-blue-100 text-blue-800 px-1.5 py-0.5 text-[10px]">
+                {dateInfo.weekString}
+              </span>
+            </div>
+            {dateInfo.isHoliday && (
+              <div className="text-[11px] text-amber-700 font-medium">
+                休：{dateInfo.holidayName ?? "放假停课"}
+              </div>
+            )}
+            {dateInfo.isMakeupDay && (
+              <div className="text-[11px] text-purple-700 font-medium">
+                调：{dateInfo.holidayName}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 接下来 48 小时日程流 */}
+        <div className="space-y-2">
+          <div className="text-xs font-bold text-slate-700">
+            <span>接下来 48 小时日程</span>
+          </div>
+
+          {scheduleLoading ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-400">
+              加载日程时空流...
+            </div>
+          ) : !activePeriod ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 text-center text-xs text-slate-500">
+              <span className="text-emerald-600 block font-semibold mb-1">🎉 48小时内无待办日程</span>
+              今日与未来48小时暂无课程或考试
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* 首项 Hero 卡片 */}
+              {(() => {
+                const startMs = new Date(activePeriod.startIso).getTime();
+                const endMs = new Date(activePeriod.endIso).getTime();
+                const isOngoing = startMs <= nowMs && nowMs < endMs;
+                const liveSec = isOngoing
+                  ? Math.max(0, Math.floor((endMs - nowMs) / 1000))
+                  : Math.max(0, Math.floor((startMs - nowMs) / 1000));
+                const totalDur = Math.max(1, endMs - startMs);
+                const progress = isOngoing
+                  ? Math.min(100, Math.max(0, Math.round(((nowMs - startMs) / totalDur) * 100)))
+                  : 0;
+
+                return (
+                  <Link
+                    to={activePeriod.type === "class" ? "/courses" : "/exams"}
+                    title={activePeriod.type === "class" ? "点击查看课程详情" : "点击查看考场信息"}
+                    className="group block rounded-xl border border-blue-200 bg-blue-50/40 p-3 text-xs space-y-1.5 shadow-sm hover:border-blue-400 hover:shadow transition cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          isOngoing ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${isOngoing ? "bg-emerald-500 animate-pulse" : "bg-blue-500"}`} />
+                        {isOngoing ? "正在进行" : "即将开始"}
+                      </span>
+                      <span className="text-slate-500 font-medium">
+                        {activePeriod.friendlyTimeStr}
+                      </span>
+                    </div>
+
+                    <div className="font-bold text-sm text-slate-900 group-hover:text-zju-primary transition-colors truncate">
+                      {activePeriod.title}
+                    </div>
+
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span className="truncate">📍 {activePeriod.location}</span>
+                      <span className="font-mono font-bold text-slate-800 group-hover:text-zju-primary transition-colors shrink-0">
+                        {formatHMS(liveSec)}
+                      </span>
+                    </div>
+
+                    {isOngoing && (
+                      <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden mt-1">
+                        <div
+                          className="h-full bg-blue-600 rounded-full transition-all duration-1000"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    )}
+                  </Link>
+                );
+              })()}
+
+              {/* 后续条目 */}
+              {laterPeriods.slice(0, 2).map((lp) => (
+                <Link
+                  key={lp.id}
+                  to={lp.type === "class" ? "/courses" : "/exams"}
+                  title={lp.type === "class" ? "点击查看课程详情" : "点击查看考场信息"}
+                  className="group block rounded-lg border border-slate-200 bg-white p-2.5 text-xs hover:border-blue-300 hover:shadow-sm transition cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 group-hover:text-zju-primary transition-colors truncate flex-1 mr-2">{lp.title}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0 font-medium">{lp.friendlyTimeStr}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">📍 {lp.location}</div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <div className="text-xs text-slate-400">登录状态</div>
-          <div className="my-1 font-semibold text-slate-700">
-            {authLoading ? "查询中" : loggedIn ? (authStatus?.username ?? "已登录") : "未登录"}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            {loggedIn ? "统一身份认证已验证" : "前往设置配置 ZJU 账号"}
-          </div>
+
+        {/* 48 小时内截止的作业（默认折叠） */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <button
+            onClick={() => setAssignmentsCollapsed((v) => !v)}
+            className="w-full flex items-center justify-between p-2.5 text-left hover:bg-slate-50 transition"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-slate-800">48小时截止作业</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold ${
+                  assignments48h.length > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {assignments48h.length}
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-400">
+              {assignmentsCollapsed ? "展开 ▾" : "折叠 ▴"}
+            </span>
+          </button>
+
+          {!assignmentsCollapsed && (
+            <div className="border-t border-slate-100 bg-slate-50/60 p-2.5 space-y-2">
+              {assignments48h.length === 0 ? (
+                <div className="text-center text-xs text-slate-500 py-1">
+                  🎉 近 48 小时无待提交作业
+                </div>
+              ) : (
+                assignments48h.map((a) => {
+                  const dueMs = new Date(a.deadlineIso).getTime();
+                  const liveSec = Math.max(0, Math.floor((dueMs - nowMs) / 1000));
+                  return (
+                    <Link
+                      key={a.id}
+                      to="/assignments"
+                      title="点击前往作业中心"
+                      className="group block rounded-lg border border-slate-200 bg-white p-2 text-xs space-y-0.5 hover:border-amber-300 hover:shadow-sm transition cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="rounded bg-blue-50 px-1 text-[10px] text-blue-700 truncate max-w-[120px]">
+                          {a.courseName}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-amber-600">
+                          {formatHMS(liveSec)}
+                        </span>
+                      </div>
+                      <div className="font-semibold text-slate-800 group-hover:text-amber-700 transition-colors truncate">{a.title}</div>
+                      <div className="text-[10px] text-slate-400">{a.dueTimeStr}</div>
+                    </Link>
+                  );
+                })
+              )}
+              <div className="text-center pt-0.5">
+                <Link to="/assignments" className="text-[11px] text-zju-primary hover:underline">
+                  前往作业中心 →
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <div className="text-xs text-slate-400">模型状态</div>
-          <div className="my-1 font-semibold text-slate-700">{loggedIn ? "可用" : "未配置"}</div>
-          <div className="text-[11px] text-slate-400">
-            <Link to="/settings" className="text-zju-primary hover:underline">
-              前往设置 →
-            </Link>
-          </div>
+
+        {/* 快捷统计与状态 */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <Link
+            to={totalPending === 0 && overdueCount > 0 ? "/assignments?tab=overdue" : "/assignments"}
+            className="rounded-lg border border-slate-200 bg-white p-2 text-center hover:border-zju-primary transition shadow-xs"
+          >
+            <div className="text-[10px] text-slate-400">待办作业</div>
+            <div className="text-base font-bold text-slate-800">{loggedIn ? `${totalPending} 项` : "—"}</div>
+          </Link>
+          <Link
+            to="/exams"
+            className="rounded-lg border border-slate-200 bg-white p-2 text-center hover:border-zju-primary transition shadow-xs"
+          >
+            <div className="text-[10px] text-slate-400">近期考试</div>
+            <div className="text-base font-bold text-slate-800">{loggedIn ? `${totalExams} 场` : "—"}</div>
+          </Link>
+          <Link
+            to={loggedIn ? "/settings#zju" : "/setup"}
+            className="rounded-lg border border-slate-200 bg-white p-2 text-center hover:border-zju-primary transition shadow-xs"
+          >
+            <div className="text-[10px] text-slate-400">ZJU 认证</div>
+            <div className={`text-xs font-bold truncate mt-1 ${loggedIn ? "text-emerald-600" : "text-amber-600"}`}>
+              {authLoading ? "..." : loggedIn ? (authStatus?.username ?? "已登录") : "未登录"}
+            </div>
+          </Link>
+          <Link
+            to="/settings#providers"
+            className="rounded-lg border border-slate-200 bg-white p-2 text-center hover:border-zju-primary transition shadow-xs"
+          >
+            <div className="text-[10px] text-slate-400">模型 API</div>
+            <div className={`text-xs font-bold truncate mt-1 ${hasModelConfigured ? "text-emerald-600" : "text-rose-500"}`}>
+              {settingsLoading ? "..." : hasModelConfigured ? (activeProvider?.name ?? settingsData?.credentials?.modelProviderName ?? "已配置") : "未配置"}
+            </div>
+          </Link>
         </div>
       </div>
     </RightPanel>
   );
 }
 
-function DashCard({
-  title,
-  value,
-  hint,
-  to,
-  highlight,
-}: {
-  title: string;
-  value: string;
-  hint: string;
-  to: string;
-  highlight: boolean;
-}) {
-  return (
-    <Link
-      to={to}
-      className={`block rounded-lg border p-3 text-sm shadow-sm transition hover:shadow-md ${
-        highlight ? "border-rose-200 bg-rose-50/50" : "border-slate-200 bg-white"
-      } hover:border-zju-primary`}
-    >
-      <div className="text-xs text-slate-400">{title}</div>
-      <div className={`my-1 text-lg font-semibold ${highlight ? "text-rose-600" : "text-slate-700"}`}>
-        {value}
-      </div>
-      <div className="text-[11px] text-slate-400">{hint}</div>
-    </Link>
-  );
+function formatHMS(totalSeconds: number): string {
+  if (totalSeconds <= 0) return "00:00:00";
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function ConversationView({
@@ -278,6 +440,22 @@ function ConversationView({
   }, [live, pending]);
 
   function handleEvent(e: AgentEvent) {
+    // 副作用（pending/error）放在 updater 外，避免 StrictMode 双触发
+    switch (e.type) {
+      case "confirmation_required":
+        setPending({
+          confirmationId: e.confirmationId,
+          toolName: e.toolName,
+          summary: e.summary,
+          inputPreview: e.inputPreview,
+        });
+        break;
+      case "error":
+        setError(e.message);
+        break;
+      default:
+        break;
+    }
     setLive((prev) => {
       const next = { ...prev, assistantText: prev.assistantText, toolSteps: [...prev.toolSteps] };
       switch (e.type) {
@@ -286,28 +464,28 @@ function ConversationView({
           next.thinking = false;
           break;
         case "tool_call_start":
-          next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "running" }];
+          if (!prev.toolSteps.some((s) => s.id === e.toolCall.id)) {
+            next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "running" }];
+          }
           break;
-        case "tool_call_end":
-          next.toolSteps = prev.toolSteps.map((s) =>
-            s.id === e.toolCall.id ? { ...s, input: e.toolCall.input, status: s.status === "running" ? "executing" : s.status } : s,
-          );
+        case "tool_call_end": {
+          const idx = prev.toolSteps.findIndex((s) => s.id === e.toolCall.id);
+          if (idx === -1) {
+            // 兼容未发 tool_call_start 的 provider：补插步骤
+            next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "executing" }];
+          } else {
+            next.toolSteps = prev.toolSteps.map((s) =>
+              s.id === e.toolCall.id
+                ? { ...s, name: s.name || e.toolCall.name, input: e.toolCall.input, status: s.status === "running" ? "executing" : s.status }
+                : s,
+            );
+          }
           break;
+        }
         case "tool_result":
           next.toolSteps = prev.toolSteps.map((s) =>
             s.id === e.toolCallId ? { ...s, status: e.ok ? "done" : "failed", result: e.result } : s,
           );
-          break;
-        case "confirmation_required":
-          setPending({
-            confirmationId: e.confirmationId,
-            toolName: e.toolName,
-            summary: e.summary,
-            inputPreview: e.inputPreview,
-          });
-          break;
-        case "error":
-          setError(e.message);
           break;
         case "done":
           if (e.confirmationId == null) {
@@ -336,16 +514,16 @@ function ConversationView({
   }
 
   async function onConfirm(decision: "approve" | "reject") {
-    if (!pending) return;
-    const pid = pending.confirmationId;
-    setPending(null);
+    if (!pending || confirm.isPending) return;
     setLive((p) => ({ ...p, thinking: true }));
     try {
       await confirm.mutateAsync({
-        confirmationId: pid,
+        confirmationId: pending.confirmationId,
         decision,
         onEvent: handleEvent,
       });
+      // 确认成功后关闭确认框；失败时保留 pending 以便重试
+      setPending(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "确认失败");
     }
@@ -385,6 +563,29 @@ function NewConversationView({ onCreated }: { onCreated: (id: string) => void })
   const confirm = useConfirmTool();
 
   function handleEvent(e: AgentEvent) {
+    // 副作用（pending/error/onCreated）放在 updater 外，避免 StrictMode 双触发
+    switch (e.type) {
+      case "confirmation_required":
+        setPending({
+          confirmationId: e.confirmationId,
+          toolName: e.toolName,
+          summary: e.summary,
+          inputPreview: e.inputPreview,
+        });
+        break;
+      case "error":
+        setError(e.message);
+        break;
+      case "done":
+        if (e.conversationId) {
+          // 先切换到新会话 ID → 父组件会渲染 ConversationView
+          // 此时 live 保持不变，ConversationView 的 useEffect 会在 history 追上后清除
+          onCreated(e.conversationId);
+        }
+        break;
+      default:
+        break;
+    }
     setLive((prev) => {
       const next = { ...prev, toolSteps: [...prev.toolSteps] };
       switch (e.type) {
@@ -393,35 +594,30 @@ function NewConversationView({ onCreated }: { onCreated: (id: string) => void })
           next.thinking = false;
           break;
         case "tool_call_start":
-          next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "running" }];
+          if (!prev.toolSteps.some((s) => s.id === e.toolCall.id)) {
+            next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "running" }];
+          }
           break;
-        case "tool_call_end":
-          next.toolSteps = prev.toolSteps.map((s) =>
-            s.id === e.toolCall.id ? { ...s, input: e.toolCall.input } : s,
-          );
+        case "tool_call_end": {
+          const idx = prev.toolSteps.findIndex((s) => s.id === e.toolCall.id);
+          if (idx === -1) {
+            // 兼容未发 tool_call_start 的 provider：补插步骤
+            next.toolSteps = [...prev.toolSteps, { id: e.toolCall.id, name: e.toolCall.name, input: e.toolCall.input, status: "executing" }];
+          } else {
+            next.toolSteps = prev.toolSteps.map((s) =>
+              s.id === e.toolCall.id
+                ? { ...s, name: s.name || e.toolCall.name, input: e.toolCall.input, status: s.status === "running" ? "executing" : s.status }
+                : s,
+            );
+          }
           break;
+        }
         case "tool_result":
           next.toolSteps = prev.toolSteps.map((s) =>
             s.id === e.toolCallId ? { ...s, status: e.ok ? "done" : "failed", result: e.result } : s,
           );
           break;
-        case "confirmation_required":
-          setPending({
-            confirmationId: e.confirmationId,
-            toolName: e.toolName,
-            summary: e.summary,
-            inputPreview: e.inputPreview,
-          });
-          break;
-        case "error":
-          setError(e.message);
-          break;
         case "done":
-          if (e.conversationId) {
-            // 先切换到新会话 ID → 父组件会渲染 ConversationView
-            // 此时 live 保持不变，ConversationView 的 useEffect 会在 history 追上后清除
-            onCreated(e.conversationId);
-          }
           return { ...prev, thinking: false };
       }
       return next;
@@ -441,16 +637,16 @@ function NewConversationView({ onCreated }: { onCreated: (id: string) => void })
   }
 
   async function onConfirm(decision: "approve" | "reject") {
-    if (!pending) return;
-    const pid = pending.confirmationId;
-    setPending(null);
+    if (!pending || confirm.isPending) return;
     setLive((p) => ({ ...p, thinking: true }));
     try {
       await confirm.mutateAsync({
-        confirmationId: pid,
+        confirmationId: pending.confirmationId,
         decision,
         onEvent: handleEvent,
       });
+      // 确认成功后关闭确认框；失败时保留 pending 以便重试
+      setPending(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "确认失败");
     }
@@ -461,7 +657,7 @@ function NewConversationView({ onCreated }: { onCreated: (id: string) => void })
       <div className="border-b border-slate-200 px-4 py-2 text-sm text-slate-500">新对话</div>
       <div className="flex-1 overflow-auto p-4">
         <div className="mb-3 text-sm text-slate-400">
-          试试问：「我最近有什么作业？」「明天杭州天气怎么样？」
+          试试问：「我最近有什么作业？」「接下来有什么课？」「下周有什么考试？」
         </div>
         <LiveBubble state={live} />
         {error && (
@@ -557,7 +753,6 @@ function toolLabel(name: string): string {
     "zju_get_exams": "查询考试安排（教务网）",
     "zju_get_timetable": "查询课表（教务网）",
     "zju_download_course_material": "下载课件",
-    "weather_get_current": "查询天气",
   };
   return map[name] ?? name;
 }

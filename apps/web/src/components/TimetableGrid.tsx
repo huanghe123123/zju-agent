@@ -1,4 +1,5 @@
-import type { TimetableEntry } from "@zju-agent/core";
+import { useMemo } from "react";
+import { type TimetableEntry, mergeTimetableEntries } from "@zju-agent/core";
 
 const DAY_LABELS = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"] as const;
 const MAX_SECTION = 13;
@@ -14,8 +15,12 @@ const COURSE_COLORS = [
   "bg-indigo-50 border-indigo-200 text-indigo-800",
 ];
 
-export function TimetableGrid({ entries }: { entries: TimetableEntry[] }) {
-  const courseNames = [...new Set(entries.map((e) => e.courseName))];
+export function TimetableGrid({ entries: rawEntries }: { entries: TimetableEntry[] }) {
+  const entries = useMemo(() => mergeTimetableEntries(rawEntries), [rawEntries]);
+  const courseNames = useMemo(
+    () => [...new Set(entries.map((e) => e.courseName))],
+    [entries],
+  );
   const colorOf = (name: string) =>
     COURSE_COLORS[courseNames.indexOf(name) % COURSE_COLORS.length]!;
 
@@ -70,18 +75,20 @@ export function TimetableGrid({ entries }: { entries: TimetableEntry[] }) {
                       className="relative border-b border-r border-slate-100 align-top"
                       style={{ height: 48, padding: 0 }}
                     >
-                      {startEntries.map((e) => {
+                      {startEntries.map((e, idx) => {
                         const span = Math.max(1, e.endSection - e.startSection + 1);
                         const height = span * 48 + (span - 1) * 1; // compensate borders
+                        const count = startEntries.length;
+                        const widthPct = 100 / count;
                         return (
                           <div
                             key={e.id}
-                            className={`m-0.5 overflow-hidden rounded border p-1.5 text-xs ${colorOf(e.courseName)}`}
+                            className={`m-0.5 overflow-hidden rounded border p-1.5 text-xs shadow-sm ${colorOf(e.courseName)}`}
                             style={{
                               position: "absolute",
                               top: 2,
-                              left: 2,
-                              right: 2,
+                              left: count === 1 ? 2 : `calc(${idx * widthPct}% + 2px)`,
+                              width: count === 1 ? "calc(100% - 4px)" : `calc(${widthPct}% - 4px)`,
                               height: height - 4,
                               zIndex: 5,
                             }}

@@ -64,11 +64,33 @@ export class ConfirmationRepo {
   }
 
   get(id: string): StoredConfirmation | null {
+    // 惰性清理过期记录，保证 TTL 真正生效
+    this.purgeExpired();
     const row = this.db
       .prepare("SELECT * FROM pending_confirmations WHERE id = ?")
       .get(id) as PendingRow | undefined;
     if (!row) return null;
-    return this.hydrate(row);
+    const rec = this.hydrate(row);
+    if (isExpired(rec)) {
+      this.delete(id);
+      return null;
+    }
+    return rec;
+  }
+
+  /**
+   * 原子认领：同一同步块内读取并删除，确保并发确认时只有一个调用者拿到记录，
+   * 避免工具被重复执行。
+   */
+  claim(id: string): StoredConfirmation | null {
+    const row = this.db
+      .prepare("SELECT * FROM pending_confirmations WHERE id = ?")
+      .get(id) as PendingRow | undefined;
+    if (!row) return null;
+    this.delete(id);
+    const rec = this.hydrate(row);
+    if (isExpired(rec)) return null;
+    return rec;
   }
 
   delete(id: string): void {
@@ -120,4 +142,10 @@ function safeParse(s: string | null): unknown {
   } catch {
     return null;
   }
+}
+
+function isExpired(rec: StoredConfirmation): boolean {
+  if (!rec.expiresAt) return false;
+  const ts = Date.parse(rec.expiresAt);
+  return !Number.isNaN(ts) && ts < Date.now();
 }

@@ -126,10 +126,16 @@ export class AuthSessionManager {
   /** 前端可获得的脱敏凭据状态 */
   async getStatus(): Promise<CredentialStatus> {
     const cred = await this.getCredential();
+    // 从加密凭据库读取模型 provider 的真实 apiKey 状态
+    const providers = await this.credentials.get<
+      Array<{ name?: string; apiKey?: string; enabled?: boolean }>
+    >("model-providers");
+    const enabledWithKey = (providers ?? []).find((p) => p.enabled && p.apiKey);
     return {
       hasZjuCredential: !!cred,
       zjuUsernameMasked: cred ? maskUsername(cred.username) : undefined,
-      hasModelApiKey: false,
+      hasModelApiKey: !!enabledWithKey,
+      modelProviderName: enabledWithKey?.name,
     };
   }
 }

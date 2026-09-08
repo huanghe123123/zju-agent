@@ -6,7 +6,7 @@
 
 import BetterSqlite3, { type Database } from "better-sqlite3";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, chmodSync, existsSync } from "node:fs";
 import { logger } from "../config/logger.js";
 
 export type Storage = {
@@ -99,6 +99,16 @@ export function initStorage(appDir: string): Storage {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  // 收紧数据库文件权限（含 WAL/SHM），防止会话数据被本机其他用户读取
+  for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    if (existsSync(f)) {
+      try {
+        chmodSync(f, 0o600);
+      } catch {
+        // 忽略（文件系统不支持时）
+      }
+    }
+  }
   logger.info("SQLite 已初始化", { dbPath });
   return {
     db,

@@ -10,14 +10,29 @@ import {
   deadlineUrgency,
   urgencyClass,
 } from "../utils/format.js";
+import { sanitizeHtml } from "../utils/sanitizeHtml.js";
 import type { Assignment } from "@zju-agent/core";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 
 const DEFAULT_URGENT_HOURS = 24;
 
 export function AssignmentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryTab = searchParams.get("tab");
+  const initialTab =
+    queryTab === "urgent" || queryTab === "relaxed" || queryTab === "overdue" || queryTab === "submitted"
+      ? queryTab
+      : "urgent";
+
   const { data, isLoading, error, refetch, isFetching } = useAllAssignments();
-  const [tab, setTab] = useState<"urgent" | "relaxed" | "overdue" | "submitted">("urgent");
+  const [tab, setTab] = useState<"urgent" | "relaxed" | "overdue" | "submitted">(initialTab);
+
+  useEffect(() => {
+    if (queryTab === "urgent" || queryTab === "relaxed" || queryTab === "overdue" || queryTab === "submitted") {
+      setTab(queryTab);
+    }
+  }, [queryTab]);
   const [urgentHours, setUrgentHours] = useState(DEFAULT_URGENT_HOURS);
 
   const all = data ?? [];
@@ -93,16 +108,40 @@ export function AssignmentsPage() {
 
       {/* 四分类 Tab */}
       <div className="mb-4 flex gap-1 rounded-md border border-slate-200 bg-white p-1">
-        <TabBtn active={tab === "urgent"} onClick={() => setTab("urgent")}>
+        <TabBtn
+          active={tab === "urgent"}
+          onClick={() => {
+            setTab("urgent");
+            setSearchParams({ tab: "urgent" });
+          }}
+        >
           将截止（{urgent.length}）
         </TabBtn>
-        <TabBtn active={tab === "relaxed"} onClick={() => setTab("relaxed")}>
+        <TabBtn
+          active={tab === "relaxed"}
+          onClick={() => {
+            setTab("relaxed");
+            setSearchParams({ tab: "relaxed" });
+          }}
+        >
           还不急（{relaxed.length}）
         </TabBtn>
-        <TabBtn active={tab === "overdue"} onClick={() => setTab("overdue")}>
+        <TabBtn
+          active={tab === "overdue"}
+          onClick={() => {
+            setTab("overdue");
+            setSearchParams({ tab: "overdue" });
+          }}
+        >
           已截止（{overdue.length}）
         </TabBtn>
-        <TabBtn active={tab === "submitted"} onClick={() => setTab("submitted")}>
+        <TabBtn
+          active={tab === "submitted"}
+          onClick={() => {
+            setTab("submitted");
+            setSearchParams({ tab: "submitted" });
+          }}
+        >
           已提交（{submitted.length}）
         </TabBtn>
       </div>
@@ -182,7 +221,8 @@ function AssignmentItem({ assignment }: { assignment: Assignment }) {
       {assignment.description && (
         <div
           className="mt-2 text-xs text-slate-500 [&_p]:mb-1"
-          dangerouslySetInnerHTML={{ __html: assignment.description }}
+          // 作业描述来自学在浙大富文本，必须经白名单消毒后再注入，防存储型 XSS
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(assignment.description) }}
         />
       )}
     </li>

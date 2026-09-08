@@ -35,6 +35,7 @@ export class OpenAIProvider implements LlmProvider {
     let buffer = "";
     const toolCalls: Map<number, { id: string; name: string; argBuf: string }> =
       new Map();
+    const started = new Set<number>();
     let finishReason = "stop";
 
     while (true) {
@@ -72,6 +73,19 @@ export class OpenAIProvider implements LlmProvider {
           if (delta?.tool_calls) {
             for (const tc of delta.tool_calls) {
               const existing = toolCalls.get(tc.index);
+              // 首次出现该工具调用时，先发 tool_call_start（与 Anthropic 行为对齐，
+              // 前端依赖它渲染工具步骤）
+              if (!existing && !started.has(tc.index)) {
+                started.add(tc.index);
+                yield {
+                  type: "tool_call_start",
+                  toolCall: {
+                    id: tc.id ?? `call_${tc.index}`,
+                    name: tc.function?.name ?? "",
+                    input: {},
+                  },
+                };
+              }
               const id = tc.id ?? existing?.id ?? `call_${tc.index}`;
               const name = tc.function?.name ?? existing?.name ?? "";
               const arg = (existing?.argBuf ?? "") + (tc.function?.arguments ?? "");
@@ -111,6 +125,8 @@ export class OpenAIProvider implements LlmProvider {
       model: req.model,
       messages,
       stream: true,
+      // 防止异常生成导致成本失控（与 Anthropic 适配器对齐）
+      max_tokens: 4096,
     };
     if (req.tools.length > 0) {
       body["tools"] = req.tools.map((t) => toOpenAITool(t));

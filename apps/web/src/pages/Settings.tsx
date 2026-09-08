@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout.js";
 import { useApiFetch } from "../api/bootstrap.js";
@@ -10,6 +10,19 @@ export function SettingsPage() {
   const validate = useValidateCredential();
   const logout = useLogout();
   const [modelOpen, setModelOpen] = useState(false);
+
+  useEffect(() => {
+    if (window.location.hash === "#providers") {
+      setModelOpen(true);
+      setTimeout(() => {
+        document.getElementById("providers")?.scrollIntoView({ behavior: "smooth" });
+      }, 50);
+    } else if (window.location.hash === "#zju") {
+      setTimeout(() => {
+        document.getElementById("zju")?.scrollIntoView({ behavior: "smooth" });
+      }, 50);
+    }
+  }, []);
   const [model, setModel] = useState({
     id: crypto.randomUUID(),
     name: "默认模型",
@@ -20,19 +33,6 @@ export function SettingsPage() {
     enabled: true,
   });
   const [message, setMessage] = useState<string | null>(null);
-
-  // 作业阈值
-  const [urgentHours, setUrgentHours] = useState(24);
-  // 提醒偏好
-  const [courseReminder, setCourseReminder] = useState(true);
-  const [examReminder1d, setExamReminder1d] = useState(true);
-  const [examReminder2h, setExamReminder2h] = useState(true);
-  const [examReminder30m, setExamReminder30m] = useState(true);
-  // 下载目录
-  const [downloadDir, setDownloadDir] = useState("~/Downloads/zju-agent");
-  // 天气
-  const [weatherOpen, setWeatherOpen] = useState(false);
-  const [weatherProvider, setWeatherProvider] = useState("wttr.in");
 
   function reload() {
     window.location.reload();
@@ -81,7 +81,7 @@ export function SettingsPage() {
         )}
 
         {/* 模型 Provider */}
-        <Section title="🤖 模型 Provider">
+        <Section id="providers" title="🤖 模型 Provider">
           <button
             onClick={() => setModelOpen((v) => !v)}
             className="rounded-md bg-zju-primary px-3 py-1.5 text-sm text-white hover:bg-zju-light"
@@ -103,7 +103,7 @@ export function SettingsPage() {
                 <input className="input" value={model.baseUrl} onChange={(e) => setModel({ ...model, baseUrl: e.target.value })} />
               </Field>
               <Field label="API Key">
-                <input className="input" type="password" value={model.apiKey} onChange={(e) => setModel({ ...model, apiKey: e.target.value })} />
+                <input autoComplete="off" className="input" type="password" value={model.apiKey} onChange={(e) => setModel({ ...model, apiKey: e.target.value })} />
               </Field>
               <Field label="模型">
                 <input className="input" value={model.model} onChange={(e) => setModel({ ...model, model: e.target.value })} />
@@ -121,7 +121,7 @@ export function SettingsPage() {
         </Section>
 
         {/* ZJU 账号 */}
-        <Section title="🔐 ZJU 统一身份认证">
+        <Section id="zju" title="🔐 ZJU 统一身份认证">
           <div className="flex flex-wrap gap-2">
             <button onClick={revalidate} disabled={validate.isPending} className="rounded-md bg-zju-primary px-3 py-1.5 text-sm text-white hover:bg-zju-light disabled:opacity-50">
               {validate.isPending ? "验证中…" : "重新验证登录"}
@@ -138,59 +138,12 @@ export function SettingsPage() {
           </p>
         </Section>
 
-        {/* 天气 Provider */}
-        <Section title="🌤️ 天气 Provider">
-          <button onClick={() => setWeatherOpen((v) => !v)} className="text-sm text-zju-primary hover:underline">
-            {weatherOpen ? "收起" : "配置"}
-          </button>
-          {weatherOpen && (
-            <div className="mt-3">
-              <Field label="Provider">
-                <select className="input" value={weatherProvider} onChange={(e) => setWeatherProvider(e.target.value)}>
-                  <option value="wttr.in">wttr.in（免费公开）</option>
-                  <option value="openweathermap">OpenWeatherMap（需 API Key）</option>
-                </select>
-              </Field>
-              <p className="mt-2 text-xs text-slate-400">默认使用 wttr.in，无需额外配置。</p>
-            </div>
-          )}
-        </Section>
-
-        {/* 下载目录 */}
-        <Section title="📁 下载目录">
-          <Field label="资料保存路径">
-            <input className="input" value={downloadDir} onChange={(e) => setDownloadDir(e.target.value)} />
-          </Field>
-          <p className="mt-2 text-xs text-slate-400">课程资料、课件等下载文件的默认保存位置。</p>
-        </Section>
-
-        {/* 作业分类阈值 */}
-        <Section title="📝 作业分类阈值">
-          <Field label={`将截止阈值：距截止 ≤ ${urgentHours} 小时`}>
-            <input type="range" min={1} max={72} value={urgentHours} onChange={(e) => setUrgentHours(Number(e.target.value))} className="w-full accent-zju-primary" />
-          </Field>
-          <p className="text-xs text-slate-400">
-            截止时间在此范围内的作业归为"将截止"，超出为"还不急"，已过截止时间为"已截止"。
-          </p>
-        </Section>
-
-        {/* 提醒偏好 */}
-        <Section title="🔔 提醒偏好">
-          <div className="space-y-2">
-            <Toggle label="课程开始前 15 分钟提醒" checked={courseReminder} onChange={setCourseReminder} />
-            <Toggle label="考试前 1 天提醒" checked={examReminder1d} onChange={setExamReminder1d} />
-            <Toggle label="考试前 2 小时提醒" checked={examReminder2h} onChange={setExamReminder2h} />
-            <Toggle label="考试前 30 分钟提醒" checked={examReminder30m} onChange={setExamReminder30m} />
-          </div>
-          <p className="mt-2 text-xs text-slate-400">提醒功能将在后续版本通过系统通知实现。</p>
-        </Section>
-
         {/* 权限策略 */}
         <Section title="🛡️ 权限策略">
           <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
             <p className="font-medium mb-1">当前策略（默认）</p>
             <ul className="list-disc pl-4 space-y-0.5">
-              <li>查询类工具（课程/作业/考试/天气）→ 直接执行</li>
+              <li>查询类工具（课程/作业/考试）→ 直接执行</li>
               <li>下载单个资料 → 可直接执行</li>
               <li>批量下载 → 必须确认</li>
               <li>作业提交 → 必须确认</li>
@@ -232,9 +185,9 @@ export function SettingsPage() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div id={id} className="rounded-lg border border-slate-200 bg-white p-4 scroll-mt-6">
       <h2 className="mb-3 font-semibold text-slate-800">{title}</h2>
       {children}
     </div>
@@ -246,28 +199,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <label className="mb-3 block">
       <span className="mb-1 block text-sm text-slate-600">{label}</span>
       {children}
-    </label>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="accent-zju-primary"
-      />
-      {label}
     </label>
   );
 }

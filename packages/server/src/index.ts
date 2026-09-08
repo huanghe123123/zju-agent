@@ -31,6 +31,18 @@ async function main() {
     zju,
   });
 
+  // 迁移：清理早期版本误存于明文 settings 表中的模型 apiKey（完整副本已在加密凭据库）
+  const plainProviders = services.settings.get<
+    Array<{ id: string; apiKey?: string }>
+  >("model-providers");
+  if ((plainProviders ?? []).some((p) => p.apiKey)) {
+    services.settings.set(
+      "model-providers",
+      (plainProviders ?? []).map((p) => ({ ...p, apiKey: "" })),
+    );
+    logger.info("已清理明文 settings 表中的历史 apiKey");
+  }
+
   const server = await createServer(services);
 
   try {
@@ -42,7 +54,7 @@ async function main() {
     logger.info(`健康检查: http://${config.host}:${config.port}/api/health`);
     if (config.isDev) {
       logger.info(
-        `开发期访问 token: ${config.accessToken.slice(0, 8)}…（前端经 /api/bootstrap 获取）`,
+        `开发期访问 token: ${config.accessToken.slice(0, 4)}…（前端经 /api/bootstrap 获取）`,
       );
     }
   } catch (err) {

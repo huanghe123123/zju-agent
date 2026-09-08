@@ -152,6 +152,13 @@ async function streamAgentRun(
   const loop = new AgentLoop(deps);
   loop.setConversationId(conversationId);
 
+  // 客户端断开（关页/断网）时中止 loop，避免后台继续消耗 LLM 与执行工具
+  let disconnected = false;
+  reply.raw.on("close", () => {
+    disconnected = true;
+    loop.abort();
+  });
+
   const cb: AgentLoopCallbacks = {
     emit: send,
     persist: (msg: AgentMessage) => {
@@ -161,6 +168,7 @@ async function streamAgentRun(
 
   try {
     const result = await run(loop, cb);
+    if (disconnected) return;
     // 结束事件
     reply.raw.write(
       `data: ${JSON.stringify({
@@ -171,8 +179,16 @@ async function streamAgentRun(
       } as DoneEvent)}\n\n`,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Agent 运行失败";
-    logger.warn("Agent loop 失败", { conversationId, message });
+    if (disconnected) return;
+    // 仅 AppError 的开发者消息可展示；内部错误给泛化文案
+    const message =
+      err instanceof AppError
+        ? err.message
+        : "Agent 运行失败，请查看服务端日志。";
+    logger.warn("Agent loop 失败", {
+      conversationId,
+      message: err instanceof Error ? err.message : String(err),
+    });
     reply.raw.write(
       `data: ${JSON.stringify({
         type: "error",
@@ -181,7 +197,13 @@ async function streamAgentRun(
       } as AgentStreamEvent)}\n\n`,
     );
   } finally {
-    reply.raw.end();
+    if (!disconnected) {
+      try {
+        reply.raw.end();
+      } catch {
+        // 连接已关闭，忽略
+      }
+    }
   }
 }
 

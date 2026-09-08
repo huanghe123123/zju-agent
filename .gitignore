@@ -41,3 +41,6 @@ downloads/
 
 # TypeScript
 *.tsbuildinfo
+
+# Dev server runtime (started by AI helper)
+.run/

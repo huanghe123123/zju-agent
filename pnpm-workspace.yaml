@@ -3,9 +3,9 @@ packages:
   - "packages/*"
 allowBuilds:
   better-sqlite3: true
+  electron: true
   esbuild: true
 minimumReleaseAgeExclude:
   - '@fastify/cors@11.3.0'
   - '@fastify/multipart@10.1.0'
   - '@types/node@22.20.1'
-

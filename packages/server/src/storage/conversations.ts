@@ -46,14 +46,20 @@ export class ConversationRepo {
 
   list(): ConversationRecord[] {
     const rows = this.db
-      .prepare("SELECT * FROM conversations ORDER BY updated_at DESC")
+      .prepare(
+        `SELECT id, title, created_at AS createdAt, updated_at AS updatedAt
+         FROM conversations ORDER BY updated_at DESC`,
+      )
       .all() as ConversationRecord[];
     return rows;
   }
 
   get(id: string): ConversationRecord | null {
     const row = this.db
-      .prepare("SELECT * FROM conversations WHERE id = ?")
+      .prepare(
+        `SELECT id, title, created_at AS createdAt, updated_at AS updatedAt
+         FROM conversations WHERE id = ?`,
+      )
       .get(id) as ConversationRecord | undefined;
     return row ?? null;
   }

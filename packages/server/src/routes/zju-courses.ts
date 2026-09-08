@@ -184,7 +184,7 @@ export function zjuCoursesRoutes(
         }
         const adapters = await deps.auth.getServiceAdapters();
         const safeName = sanitizeFileName(fileName);
-        const subdir = body.subdir ?? sanitizeDir(materialId || courseId);
+        const subdir = sanitizeDir(body.subdir ?? materialId ?? courseId);
         const result = await writeDownloadStream({
           stream: async () => {
             const file = await adapters.courses.fetchFile(fileId, {

@@ -27,7 +27,7 @@ function mergedSemesters(semesters: Semester[]): Semester[] {
     const id = semesterToXnxq01id(s.name);
     if (!id) continue;
     const existing = byId.get(id);
-    if (!existing || (s.isActive && !existing.isActive)) {
+    if (!existing) {
       byId.set(id, {
         ...s,
         name:
@@ -50,10 +50,8 @@ export function ExamsPage() {
   const { data: rawSemesters } = useSemesters();
   const semesters = useMemo(() => mergedSemesters(rawSemesters ?? []), [rawSemesters]);
 
-  // 默认学期：活跃 → 最近一次（列表第一项）
+  // 默认学期：时间最近
   const defaultId = useMemo(() => {
-    const active = semesters.find((s) => s.isActive);
-    if (active) return semesterToXnxq01id(active.name)!;
     return semesters[0] ? semesterToXnxq01id(semesters[0].name)! : undefined;
   }, [semesters]);
 
@@ -75,7 +73,7 @@ export function ExamsPage() {
               const id = semesterToXnxq01id(s.name)!;
               return (
                 <option key={id} value={id}>
-                  {s.name}{s.isActive ? " · 本学期" : ""}
+                  {s.name}
                 </option>
               );
             })}
@@ -105,14 +103,22 @@ export function ExamsPage() {
 function ExamsPanel({ xnxq01id }: { xnxq01id: string }) {
   const { data, isLoading, error, refetch, isFetching } = useExams(xnxq01id);
   const exams = data ?? [];
-  const upcoming = exams.filter((e) => {
-    const ts = parseExamTimestamp(e.time);
-    return !Number.isNaN(ts) && ts >= Date.now();
-  });
-  const past = exams.filter((e) => {
-    const ts = parseExamTimestamp(e.time);
-    return !Number.isNaN(ts) && ts < Date.now();
-  });
+  const now = Date.now();
+
+  const upcoming = exams
+    .filter((e) => {
+      const ts = parseExamTimestamp(e.time);
+      return !Number.isNaN(ts) && ts >= now;
+    })
+    .sort((a, b) => parseExamTimestamp(a.time) - parseExamTimestamp(b.time));
+
+  const past = exams
+    .filter((e) => {
+      const ts = parseExamTimestamp(e.time);
+      return !Number.isNaN(ts) && ts < now;
+    })
+    .sort((a, b) => parseExamTimestamp(b.time) - parseExamTimestamp(a.time));
+
   const noTime = exams.filter((e) => !e.time || Number.isNaN(parseExamTimestamp(e.time)));
 
   if (error) {
@@ -139,7 +145,7 @@ function ExamsPanel({ xnxq01id }: { xnxq01id: string }) {
         </button>
       </div>
 
-      <Section title="即将到来的考试" exams={upcoming} emptyText="近期无考试安排 🎉" />
+      <Section title="待考科目" exams={upcoming} emptyText="本学期暂无待考科目安排 🎉" />
       <Section title="已结束" exams={past} emptyText="无已结束的考试" />
       <Section title="待安排时间" exams={noTime} emptyText="无待安排的考试" />
     </div>
@@ -176,37 +182,73 @@ function Section({
 }
 
 function ExamItem({ exam }: { exam: Exam }) {
+  const ts = parseExamTimestamp(exam.time);
+  const now = Date.now();
+
+  const badge = (() => {
+    if (Number.isNaN(ts)) {
+      return (
+        <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500 font-medium">
+          时间待定
+        </span>
+      );
+    }
+    if (ts < now) {
+      return (
+        <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-400 font-medium">
+          已结束
+        </span>
+      );
+    }
+
+    const diffMs = ts - now;
+    const diffHours = Math.floor(diffMs / 3600_000);
+    const diffDays = Math.ceil(diffMs / (24 * 3600_000));
+
+    if (diffHours <= 24) {
+      return (
+        <span className="shrink-0 rounded bg-rose-100 text-rose-700 px-2 py-0.5 text-xs font-bold animate-pulse">
+          即将开考 · 仅剩 {Math.max(1, diffHours)} 小时
+        </span>
+      );
+    }
+    if (diffDays <= 7) {
+      return (
+        <span className="shrink-0 rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-semibold">
+          近期待考 · 距今 {diffDays} 天
+        </span>
+      );
+    }
+    return (
+      <span className="shrink-0 rounded bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-medium">
+        待考 · 距今 {diffDays} 天
+      </span>
+    );
+  })();
+
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <li className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-slate-800">{exam.courseName}</div>
+          <div className="truncate text-sm font-semibold text-slate-800">{exam.courseName}</div>
           <div className="mt-0.5 text-xs text-slate-500">
             {exam.semester ? `学期 ${exam.semester}` : ""}
           </div>
         </div>
-        {(() => {
-          const ts = parseExamTimestamp(exam.time);
-          if (Number.isNaN(ts)) return null;
-          return ts < Date.now() ? (
-            <span className="shrink-0 text-xs text-slate-400">已结束</span>
-          ) : (
-            <span className="shrink-0 text-xs text-rose-500 font-medium">即将考试</span>
-          );
-        })()}
+        {badge}
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-500">
+      <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-md">
         <div>
-          <div className="text-slate-400">时间</div>
-          <div>{formatDateTime(exam.time)}</div>
+          <div className="text-slate-400 mb-0.5">考试时间</div>
+          <div className="font-medium text-slate-700">{formatDateTime(exam.time)}</div>
         </div>
         <div>
-          <div className="text-slate-400">地点</div>
-          <div className="truncate">{exam.location || "—"}</div>
+          <div className="text-slate-400 mb-0.5">地点</div>
+          <div className="truncate font-medium text-slate-700">{exam.location || "待公布"}</div>
         </div>
         <div>
-          <div className="text-slate-400">座位</div>
-          <div>{exam.seat || "—"}</div>
+          <div className="text-slate-400 mb-0.5">座位</div>
+          <div className="font-medium text-slate-700">{exam.seat || "待公布"}</div>
         </div>
       </div>
     </li>

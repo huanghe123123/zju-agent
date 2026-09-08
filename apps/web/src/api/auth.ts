@@ -5,7 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ApiResponse, AuthStatus } from "@zju-agent/core";
-import { useApiFetch } from "./bootstrap.js";
+import { useApiFetch, clearStoredToken } from "./bootstrap.js";
 
 export function useAuthStatus() {
   const apiFetch = useApiFetch();
@@ -52,8 +52,11 @@ export function useLogout() {
       return json.data;
     },
     onSuccess: () => {
+      // 服务端已轮换本地访问 token：清除旧 token 并重载页面重新 bootstrap
+      clearStoredToken();
       void qc.invalidateQueries({ queryKey: ["auth", "status"] });
       void qc.invalidateQueries({ queryKey: ["settings"] });
+      window.location.reload();
     },
   });
 }

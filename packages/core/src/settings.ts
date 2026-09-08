@@ -21,10 +21,6 @@ export type AppSettings = {
   defaultModelProviderId: string | null;
   /** 下载目录 */
   downloadDir: string;
-  /** 天气 provider，空字符串表示使用免费公共接口 */
-  weatherProvider: string;
-  /** 默认天气城市 */
-  defaultCity: string;
   /** 单文件下载是否需要确认 */
   confirmSingleDownload: boolean;
   /** 默认课程提醒提前分钟数 */
@@ -36,8 +32,6 @@ export type AppSettings = {
 export const appSettingsSchema = z.object({
   defaultModelProviderId: z.string().nullable(),
   downloadDir: z.string(),
-  weatherProvider: z.string(),
-  defaultCity: z.string().default("杭州"),
   confirmSingleDownload: z.boolean().default(false),
   courseReminderLeadMinutes: z.number().int().default(15),
   accessToken: z.string().nullable(),

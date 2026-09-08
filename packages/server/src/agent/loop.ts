@@ -23,20 +23,41 @@ import type {
   ToolResult,
 } from "@zju-agent/core";
 import { createProvider } from "@zju-agent/llm";
+import { getAcademicPeriod } from "@zju-agent/zju-services";
 import type { LlmProvider, LlmRequest } from "@zju-agent/llm";
 import type { ServicesContainer } from "../services.js";
 import type { ServerConfig } from "../config/env.js";
 import { buildTools } from "./tools.js";
 import { logger } from "../config/logger.js";
 
-export const SYSTEM_PROMPT = `你是浙江大学校园智能助手。你能查询学生的课程、作业、考试、课表、天气等校园信息，并能执行下载课程资料等操作。
+function datetimeStr(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} (周${["日","一","二","三","四","五","六"][now.getDay()]})`;
+}
 
-关于学期：学期格式为 "2024-2025-2"（春夏）或 "2024-2025-1"（秋冬）。默认查询当前活跃学期，但用户也可以询问任意历史学期的信息（如"上学期考了什么""2023年秋冬有哪些课"），对应工具支持可选的 semester 参数。
+export function systemPrompt(): string {
+  const period = getAcademicPeriod();
+  const periodStr = period.type === "break"
+    ? `当前处于${period.name}`
+    : `当前为${period.year}${period.term}学期`;
+  return SYSTEM_PROMPT_TPL
+    .replace("__DATETIME__", datetimeStr())
+    .replace("__PERIOD__", periodStr);
+}
 
-关于"考试"的重要区分：
-- 学在浙大里的"测试/小测"(zju_get_quizzes) 是某门课程内的在线测验。
-- 教务网的"考试安排"(zju_get_exams) 是期末/期中等正式考试，含时间、地点、座位号。
-用户问"有没有小测/在线测试"时调 zju_get_quizzes；问"考试安排/期末考试/什么时候考试"时调 zju_get_exams。两者不要混淆。
+const SYSTEM_PROMPT_TPL = `你是浙江大学校园智能助手。你能查询学生的课程、作业、考试、课表等校园信息，并能执行下载课程资料等操作。
+
+当前时间：__DATETIME__。__PERIOD__。
+
+关于学期：学期格式为 "2026-2027-1"（秋冬）或 "2025-2026-2"（春夏）。系统已集成权威浙大校历与调休算法，默认自动推算当前学年学期，也能准确识别教学周次（秋/冬/春/夏第几周）、考试周与法定节假日调休。
+
+关于日程与课表查询工具选用：
+- 接下来日程流与48小时待办 (zju_get_upcoming_schedule)：用户询问"接下来有什么课/安排""今天/明天接下来做什么""未来48小时安排""最近有什么作业快截止了""现在正在上什么课"时，优先调用该工具。它仿照 Celechron 体系，会返回正在进行/即将开始的课程与考试（带精准倒计时、教室与教师）、以及48小时内即将截止的作业待办。
+- 综合单日日程 (zju_get_daily_schedule)：用户询问具体某一天的整日安排（如"今天有什么安排""明天日程""周三有什么事""今天放假吗"）时调用。它会基于校历，同时聚合当天实际要上的课（自动剔除假期停课、计算调休换日）、当天的期中/期末考试、当天到期的作业 DDL。
+- 课表查询 (zju_get_timetable)：用户询问"我有什么课""明天有什么课""今天下午有什么课""周二有哪些课""上学期课表"时调用。如果用户问的是具体某天（如"明天"），务必在参数中传入 date: "tomorrow"，工具会自动根据浙大校历计算当天真实课程（处理调休补课与停课）。
+- 考试安排 (zju_get_exams)：查询正式期末/期中考试（含具体考场教室与座位号）。如果用户问的是单门课内的在线小测，使用 zju_get_quizzes。
+- 成绩学分 (zju_get_grades)：查询成绩、学分(credit)与五分制绩点(fivePoint)。
 
 规则：
 - 用户问校园相关问题时，主动调用工具获取真实数据，不要编造。
@@ -74,9 +95,15 @@ export class AgentLoop {
     apiKey: string;
     model: string;
   } | null = null;
+  private aborted = false;
 
   constructor(private deps: AgentLoopDeps) {
     this.tools = buildTools(deps);
+  }
+
+  /** 客户端断开时中止 loop（下一检查点停止，不再执行新工具） */
+  abort(): void {
+    this.aborted = true;
   }
 
   /**
@@ -94,6 +121,10 @@ export class AgentLoop {
     const history = [...messages];
 
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+      // 客户端断开 → 立即停止
+      if (this.aborted) {
+        return { paused: false, confirmationId: null };
+      }
       // 调用 LLM
       const toolManifests = this.tools.map((t) => ({
         name: t.name,
@@ -110,7 +141,7 @@ export class AgentLoop {
         messages: history,
         tools: toolManifests,
         toolChoice: "auto",
-        system: SYSTEM_PROMPT,
+        system: systemPrompt(),
       };
 
       let assistantText = "";
@@ -151,32 +182,52 @@ export class AgentLoop {
         }
       }
 
-      // 处理每个工具调用
+      // 处理工具调用：先执行所有无需确认的工具（含未知工具报错），
+      // 再把需确认的工具统一走确认流——这样同批次中排在待确认项之后的
+      // read 类工具不会因占位而永远丢失。
       let paused = false;
       let pausedConfirmationId: string | null = null;
       let confirmationIndex = -1;
+      const confirmQueue: number[] = [];
       for (let i = 0; i < collectedToolCalls.length; i++) {
         const tc = collectedToolCalls[i]!;
         const tool = toolMap.get(tc.name);
-        if (!tool) {
-          const result: ToolResult = {
-            ok: false,
-            error: { code: "TOOL_INPUT_INVALID", message: `未知工具：${tc.name}` },
-          };
-          const toolMsg = toToolMessage(tc, result);
-          cb.emit({
-            type: "tool_result",
-            toolCallId: tc.id,
-            result: result.data ?? result.error,
-            ok: false,
-          });
-          cb.persist(toolMsg);
-          history.push(toolMsg);
+        if (tool?.requiresConfirmation) {
+          confirmQueue.push(i);
           continue;
         }
+        if (this.aborted) break;
+        const result: ToolResult = !tool
+          ? {
+              ok: false,
+              error: {
+                code: "TOOL_INPUT_INVALID",
+                message: `未知工具：${tc.name}`,
+              },
+            }
+          : await tool.execute(tc.input, {
+              userId: "local",
+              conversationId: this.currentConversationId,
+              requestId: tc.id,
+            });
+        cb.emit({
+          type: "tool_result",
+          toolCallId: tc.id,
+          result: result.data ?? result.error,
+          ok: result.ok,
+        });
+        const toolMsg = toToolMessage(tc, result);
+        cb.persist(toolMsg);
+        history.push(toolMsg);
+      }
 
-        // 高风险 → 待确认
-        if (tool.requiresConfirmation) {
+      // 待确认项：第一个进入确认流；其余注入占位 tool message
+      //（LLM API 要求 assistant tool_calls 之后必须有对应 tool 消息）
+      if (!this.aborted && confirmQueue.length > 0) {
+        const first = confirmQueue[0]!;
+        const tc = collectedToolCalls[first]!;
+        const tool = toolMap.get(tc.name);
+        if (tool) {
           const stored = this.deps.confirmations.create({
             conversationId: this.currentConversationId,
             toolCall: tc,
@@ -199,32 +250,10 @@ export class AgentLoop {
           });
           paused = true;
           pausedConfirmationId = stored.id;
-          confirmationIndex = i;
-          break; // 暂停 loop，等待确认
+          confirmationIndex = first;
         }
-
-        // 普通工具直接执行
-        const result = await tool.execute(tc.input, {
-          userId: "local",
-          conversationId: this.currentConversationId,
-          requestId: tc.id,
-        });
-        cb.emit({
-          type: "tool_result",
-          toolCallId: tc.id,
-          result: result.data ?? result.error,
-          ok: result.ok,
-        });
-        const toolMsg = toToolMessage(tc, result);
-        cb.persist(toolMsg);
-        history.push(toolMsg);
-      }
-
-      // 暂停确认时：为同一批次中尚未处理的剩余工具调用注入占位 tool message，
-      // 否则 LLM API 会拒绝 "insufficient tool messages following tool_calls message"
-      if (paused && confirmationIndex >= 0) {
-        for (let i = confirmationIndex + 1; i < collectedToolCalls.length; i++) {
-          const tc = collectedToolCalls[i]!;
+        for (let qi = confirmationIndex >= 0 ? 1 : 0; qi < confirmQueue.length; qi++) {
+          const tc2 = collectedToolCalls[confirmQueue[qi]!]!;
           const placeholder: ToolResult = {
             ok: false,
             error: {
@@ -232,10 +261,10 @@ export class AgentLoop {
               message: "该工具调用因同批次中存在待确认项而暂缓，请先确认高危操作。",
             },
           };
-          const toolMsg = toToolMessage(tc, placeholder);
+          const toolMsg = toToolMessage(tc2, placeholder);
           cb.emit({
             type: "tool_result",
-            toolCallId: tc.id,
+            toolCallId: tc2.id,
             result: placeholder.error,
             ok: false,
           });
@@ -244,6 +273,9 @@ export class AgentLoop {
         }
       }
 
+      if (this.aborted) {
+        return { paused: false, confirmationId: null };
+      }
       if (paused) {
         return { paused: true, confirmationId: pausedConfirmationId };
       }
@@ -269,7 +301,7 @@ export class AgentLoop {
     messages: AgentMessage[],
     cb: AgentLoopCallbacks,
   ): Promise<{ paused: boolean; confirmationId: string | null }> {
-    const stored = this.deps.confirmations.get(confirmationId);
+    const stored = this.deps.confirmations.claim(confirmationId);
     if (!stored) {
       cb.emit({
         type: "error",
@@ -278,7 +310,6 @@ export class AgentLoop {
       });
       return { paused: false, confirmationId: null };
     }
-    this.deps.confirmations.delete(confirmationId);
     this.deps.audit.log({
       action: "tool.confirm.approved",
       riskLevel: stored.riskLevel,
@@ -328,11 +359,10 @@ export class AgentLoop {
     messages: AgentMessage[],
     cb: AgentLoopCallbacks,
   ): Promise<{ paused: boolean; confirmationId: string | null }> {
-    const stored = this.deps.confirmations.get(confirmationId);
+    const stored = this.deps.confirmations.claim(confirmationId);
     if (!stored) {
       return { paused: false, confirmationId: null };
     }
-    this.deps.confirmations.delete(confirmationId);
     this.deps.audit.log({
       action: "tool.confirm.rejected",
       riskLevel: stored.riskLevel,

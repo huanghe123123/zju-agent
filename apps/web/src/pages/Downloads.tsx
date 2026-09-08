@@ -143,6 +143,32 @@ function DownloadRow({
   const kind = previewKind(record);
   const canPreview = kind !== "unsupported";
   const [confirming, setConfirming] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  /** 下载走 fetch→blob（Authorization 头），token 不进 URL/历史记录 */
+  async function downloadFile() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/files/downloads/${record.id}/preview`, {
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+      });
+      if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = record.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "下载失败");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <li
@@ -178,12 +204,13 @@ function DownloadRow({
               预览
             </button>
           )}
-          <a
-            href={downloadPreviewUrl(record.id, token, false)}
-            className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+          <button
+            onClick={() => void downloadFile()}
+            disabled={downloading}
+            className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50"
           >
-            下载
-          </a>
+            {downloading ? "下载中…" : "下载"}
+          </button>
           {confirming ? (
             <span className="flex items-center gap-1 text-xs">
               <button

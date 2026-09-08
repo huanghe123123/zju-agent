@@ -37,6 +37,11 @@ function setStoredToken(token: string | null) {
   }
 }
 
+/** 清除本地保存的 token（登出/401 时使用） */
+export function clearStoredToken() {
+  setStoredToken(null);
+}
+
 type BootstrapState = {
   isReady: boolean;
   isConnected: boolean;
@@ -62,11 +67,7 @@ export const useBootstrapStore = create<BootstrapState>((set) => ({
       }
       const data = json.data;
       // 开发期使用接口下发的 token；生产期保留既有 token（由 Electron 注入）
-      let token = data.accessToken ?? getStoredToken();
-      if (!token) {
-        // 生产期兜底：尝试回退 token（仅开发联调）
-        token = "dev-local-token-zju-agent";
-      }
+      const token = data.accessToken ?? getStoredToken();
       setStoredToken(token);
       set({
         isReady: true,
@@ -96,9 +97,36 @@ export function useApiFetch() {
     if (token) headers.set("Authorization", `Bearer ${token}`);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     const res = await fetch(path, { ...init, headers });
+    // token 失效（后端重启/轮换）时：清除旧 token，重新 bootstrap 后用新 token 重试一次
+    if (
+      res.status === 401 &&
+      !didAutoRecover &&
+      (!init?.body || typeof init.body === "string")
+    ) {
+      didAutoRecover = true;
+      try {
+        clearStoredToken();
+        const store = useBootstrapStore.getState();
+        await store.bootstrap();
+        const newToken = useBootstrapStore.getState().token;
+        if (newToken && newToken !== token) {
+          const retryHeaders = new Headers(init?.headers);
+          retryHeaders.set("Authorization", `Bearer ${newToken}`);
+          if (!retryHeaders.has("Accept")) {
+            retryHeaders.set("Accept", "application/json");
+          }
+          return fetch(path, { ...init, headers: retryHeaders });
+        }
+      } finally {
+        didAutoRecover = false;
+      }
+    }
     return res;
   };
 }
+
+/** 防止 401 → bootstrap → 401 的死循环（每轮只自动恢复一次） */
+let didAutoRecover = false;
 
 /** 用于二进制资源（文件预览/下载）的 URL：token 无法放 header，改走 query */
 export function useTokenUrl() {

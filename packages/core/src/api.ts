@@ -39,6 +39,14 @@ export function fail(
   };
 }
 
+/** 未捕获异常的日志槽：由宿主（server）注入，避免 core 依赖具体 logger */
+let unknownErrorSink: ((err: unknown) => void) | null = null;
+
+/** 设置未捕获异常的日志回调（服务端启动时调用一次） */
+export function setUnknownErrorSink(fn: ((err: unknown) => void) | null): void {
+  unknownErrorSink = fn;
+}
+
 /** 包装异步处理函数为 ApiResponse，自动捕获抛出的 AppError */
 export async function wrap<T>(
   fn: () => Promise<T>,
@@ -52,9 +60,11 @@ export async function wrap<T>(
         retryable: err.retryable,
       });
     }
-    const message =
-      err instanceof Error ? err.message : "未知错误";
-    return fail("UNKNOWN_ERROR", message, { retryable: false });
+    // 内部错误：原始消息只进服务端日志，不下发客户端（避免泄露内部实现细节）
+    unknownErrorSink?.(err);
+    return fail("UNKNOWN_ERROR", "服务器内部错误，请查看服务端日志。", {
+      retryable: false,
+    });
   }
 }
 

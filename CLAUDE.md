@@ -40,8 +40,8 @@ React Web UI (apps/web)  ──HTTP + local access token──▶  Local Fastify
 
 - `packages/core` — platform-agnostic types only (domain models, `ApiResponse`/`AppError`/`ErrorCode`, tool definitions). No Node-only, no React. Shared by every package including the browser, so keep it dependency-light.
 - `packages/llm` — provider-agnostic LLM layer. One unified message/event type; OpenAI + Anthropic adapters translate to/from it. Supports tool calling + streaming. No Node-only APIs (uses injected `fetch`) so it needs `lib: ["ES2022","DOM"]`.
-- `packages/zju-services` — wraps `login-zju`. `createZjuServices()` → lazy-loaded `ZJUAM`/`COURSES`/`ZDBK`/`CLASSROOM` instances all sharing one login. Domain adapters (`CoursesService`, `ZdbkService`, `WeatherService`, …) parse ZJU responses into `core` domain types. Also exports `semesterToXnxq01id` / `activeXnxq01ids` for 学在浙大↔教务网 semester mapping.
-- `packages/server` — Fastify app. Service container (`services.ts`) holds all repos + the ZJU services + a standalone `WeatherService` (weather uses public wttr.in, unrelated to ZJU auth — kept separate to avoid locking login when no ZJU account is configured). Routes under `/api/{health,bootstrap,settings,auth,zju,files,agent}`. Agent loop + tool registry live under `src/agent/`.
+- `packages/zju-services` — wraps `login-zju`. `createZjuServices()` → lazy-loaded `ZJUAM`/`COURSES`/`ZDBK`/`CLASSROOM` instances all sharing one login. Domain adapters (`CoursesService`, `ZdbkService`, `CalendarService`, …) parse ZJU responses into `core` domain types. Also exports `semesterToXnxq01id` / `activeXnxq01ids` for 学在浙大↔教务网 semester mapping.
+- `packages/server` — Fastify app. Service container (`services.ts`) holds all repos + the ZJU services + `CalendarService`. Routes under `/api/{health,bootstrap,settings,auth,zju,files,agent}`. Agent loop + tool registry live under `src/agent/`.
 - `packages/storage`, `packages/scheduler` — abstraction seams reserved for future Electron/Capacitor native backends; currently thin.
 - `apps/web` — React 18 + Vite + React Router + TanStack Query + Zustand + Tailwind. Pages are lazy-loaded (`src/routes/index.tsx`).
 

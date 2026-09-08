@@ -15,10 +15,11 @@ import type { Course, Semester } from "@zju-agent/core";
 
 /** 学在浙大学期名 → 教务网 xnxq01id */
 function semesterToXnxq01id(name: string): string | null {
-  const m = /^(\d{4}-\d{4})(春|夏|春夏|秋|冬|秋冬|短)$/.exec(name);
+  const m = /^(\d{4}-\d{4})(春|夏|春夏|秋|冬|秋冬|短|短学期)$/.exec(name);
   if (!m) return null;
   const term = m[2]!;
   const year = m[1]!;
+  if (term === "短" || term === "短学期") return `${year}-3`;
   return `${year}-${["春", "夏", "春夏"].includes(term) ? "2" : "1"}`;
 }
 
@@ -29,13 +30,16 @@ function mergedSemesters(semesters: Semester[]): Semester[] {
     const id = semesterToXnxq01id(s.name);
     if (!id) continue;
     const existing = byId.get(id);
-    if (!existing || (s.isActive && !existing.isActive)) {
-      byId.set(id, { ...s, name: id.endsWith("-1") ? `${id.slice(0, 9)}秋冬` : `${id.slice(0, 9)}春夏` });
+    if (!existing) {
+      let displayName = `${id.slice(0, 9)}秋冬`;
+      if (id.endsWith("-2")) displayName = `${id.slice(0, 9)}春夏`;
+      else if (id.endsWith("-3")) displayName = `${id.slice(0, 9)}短学期`;
+      byId.set(id, { ...s, name: displayName });
     }
   }
   return [...byId.values()].sort((a, b) => {
-    const ax = semesterToXnxq01id(a.name)!;
-    const bx = semesterToXnxq01id(b.name)!;
+    const ax = semesterToXnxq01id(a.name) || "";
+    const bx = semesterToXnxq01id(b.name) || "";
     return bx.localeCompare(ax);
   });
 }
@@ -48,8 +52,8 @@ export function CoursesPage() {
   const semesters = useMemo(() => mergedSemesters(rawSemesters ?? []), [rawSemesters]);
 
   const defaultId = useMemo(() => {
-    const active = semesters.find((s) => s.isActive);
-    if (active) return semesterToXnxq01id(active.name)!;
+    const foundCurrent = semesters.find((s) => semesterToXnxq01id(s.name) === "2026-2027-1");
+    if (foundCurrent) return "2026-2027-1";
     return semesters[0] ? semesterToXnxq01id(semesters[0].name)! : undefined;
   }, [semesters]);
 
@@ -57,9 +61,34 @@ export function CoursesPage() {
   const xnxq01id = selectedSem ?? defaultId;
 
   // 按当前教务网 semesterId 匹配学在浙大课程
-  const semesterMap = new Map((rawSemesters ?? []).map((s) => [s.id, s]));
-  const activeSemesters = (rawSemesters ?? []).filter((s) => s.isActive);
-  const grouped = groupBySemester(courses ?? [], semesterMap, activeSemesters);
+  const semesterMap = useMemo(
+    () => new Map((rawSemesters ?? []).map((s) => [s.id, s])),
+    [rawSemesters],
+  );
+
+  // 根据当前选择的学期 (xnxq01id) 过滤出对应课程
+  const filteredCourses = useMemo(() => {
+    if (!courses) return [];
+    if (!xnxq01id || xnxq01id === "all") return courses;
+    return courses.filter((c) => {
+      const sem = semesterMap.get(c.semesterId);
+      if (!sem) return false;
+      return semesterToXnxq01id(sem.name) === xnxq01id;
+    });
+  }, [courses, xnxq01id, semesterMap]);
+
+  const { data: timetableData, isLoading: timetableLoading } = useTimetable(
+    xnxq01id && xnxq01id !== "all" ? xnxq01id : "",
+  );
+  const timetableCourseCount = useMemo(() => {
+    if (!timetableData || timetableData.length === 0) return 0;
+    return new Set(timetableData.map((t) => t.courseName)).size;
+  }, [timetableData]);
+
+  const grouped = useMemo(
+    () => groupBySemester(filteredCourses, semesterMap),
+    [filteredCourses, semesterMap],
+  );
 
   return (
     <Layout
@@ -68,9 +97,15 @@ export function CoursesPage() {
           semesters={semesters}
           xnxq01id={xnxq01id}
           selectedSem={selectedSem}
-          onSemesterChange={setSelectedSem}
+          onSemesterChange={(v) => {
+            setSelectedSem(v);
+            setSelectedId(null);
+          }}
           grouped={grouped}
+          totalCourses={filteredCourses.length}
+          timetableCourseCount={timetableCourseCount}
           isLoading={semLoading || coursesLoading}
+          timetableLoading={timetableLoading}
           errorMessage={error?.message}
           onSelectCourse={setSelectedId}
         />
@@ -83,6 +118,14 @@ export function CoursesPage() {
       {!xnxq01id ? (
         <div className="rounded-md border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
           未识别到任何学期，请先在学在浙大确认已选课。
+        </div>
+      ) : xnxq01id === "all" ? (
+        <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+          <div className="mb-2 text-2xl">📅</div>
+          <div className="mb-1 font-semibold text-slate-700">已切换为「全部学期」总览</div>
+          <div className="mx-auto max-w-md text-xs text-slate-400">
+            右侧总览已展示全部历史课程。课表按单学期排列，请在右侧选择具体学期查看当学期课程表。
+          </div>
         </div>
       ) : (
         <TimetablePanel xnxq01id={xnxq01id} />
@@ -105,7 +148,10 @@ function CoursesRightPanel({
   selectedSem,
   onSemesterChange,
   grouped,
+  totalCourses,
+  timetableCourseCount,
   isLoading,
+  timetableLoading,
   errorMessage,
   onSelectCourse,
 }: {
@@ -114,7 +160,10 @@ function CoursesRightPanel({
   selectedSem: string | undefined;
   onSemesterChange: (v: string | undefined) => void;
   grouped: ReturnType<typeof groupBySemester>;
+  totalCourses: number;
+  timetableCourseCount: number;
   isLoading: boolean;
+  timetableLoading: boolean;
   errorMessage: string | undefined;
   onSelectCourse: (id: string) => void;
 }) {
@@ -122,7 +171,14 @@ function CoursesRightPanel({
     <RightPanel title="学期总览">
       {/* 学期切换 */}
       <div className="mb-3">
-        <label className="mb-1 block text-xs font-medium text-slate-500">学期</label>
+        <div className="mb-1 flex items-center justify-between">
+          <label className="text-xs font-medium text-slate-500">学期</label>
+          <span className="text-[11px] text-slate-400">
+            {xnxq01id === "all"
+              ? (isLoading ? "" : `全部课程 ${totalCourses} 门`)
+              : (timetableLoading ? "" : `本学期 ${timetableCourseCount > 0 ? timetableCourseCount : totalCourses} 门`)}
+          </span>
+        </div>
         <select
           value={selectedSem ?? xnxq01id ?? ""}
           onChange={(e) => onSemesterChange(e.target.value || undefined)}
@@ -134,10 +190,11 @@ function CoursesRightPanel({
             const id = semesterToXnxq01id(s.name)!;
             return (
               <option key={id} value={id}>
-                {s.name}{s.isActive ? " · 本学期" : ""}
+                {s.name}
               </option>
             );
           })}
+          <option value="all">全部学期（所有历史课程）</option>
         </select>
       </div>
 
@@ -147,16 +204,16 @@ function CoursesRightPanel({
       ) : isLoading ? (
         <div className="text-xs text-slate-400">加载中…</div>
       ) : grouped.length === 0 ? (
-        <div className="text-xs text-slate-400">暂无课程</div>
+        <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-400">
+          该学期暂无学在浙大课程
+        </div>
       ) : (
         <div className="space-y-3">
           {grouped.map((g) => (
             <div key={g.semesterId}>
-              <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-slate-500">
-                {g.semesterName}
-                {g.isActive && (
-                  <span className="rounded bg-emerald-100 px-1 py-0.5 text-[9px] text-emerald-700">本学期</span>
-                )}
+              <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                <span>{g.semesterName}</span>
+                <span className="text-[10px] text-slate-400">{g.courses.length} 门</span>
               </div>
               <div className="space-y-1">
                 {g.courses.map((c) => (
@@ -174,6 +231,11 @@ function CoursesRightPanel({
               </div>
             </div>
           ))}
+          {xnxq01id !== "all" && timetableCourseCount > 0 && timetableCourseCount > totalCourses && (
+            <div className="rounded-md bg-slate-50 border border-slate-200/70 p-2.5 text-[11px] text-slate-500 leading-relaxed">
+              💡 教务网选课共 {timetableCourseCount} 门；右栏仅列出已在「学在浙大」开通课件空间的课程。
+            </div>
+          )}
         </div>
       )}
     </RightPanel>
@@ -301,9 +363,7 @@ function CourseDetailDrawer({
 function groupBySemester(
   courses: Course[],
   semesterMap: Map<string, Semester>,
-  activeSemesters: Semester[],
 ) {
-  const activeIds = new Set(activeSemesters.map((s) => s.id));
   const groups = new Map<string, Course[]>();
   for (const c of courses) {
     const list = groups.get(c.semesterId) ?? [];
@@ -313,15 +373,12 @@ function groupBySemester(
   return [...groups.entries()]
     .map(([semesterId, list]) => ({
       semesterId,
-      semesterName: semesterMap.get(semesterId)?.name ?? semesterId,
-      isActive: activeIds.has(semesterId),
+      semesterName:
+        semesterMap.get(semesterId)?.name ??
+        (semesterId === "0" ? "其他 / 拓展课程" : semesterId),
       courses: list,
     }))
-    .sort(
-      (a, b) =>
-        Number(b.isActive) - Number(a.isActive) ||
-        a.semesterName.localeCompare(b.semesterName),
-    );
+    .sort((a, b) => b.semesterName.localeCompare(a.semesterName));
 }
 
 function EmptyHint({ message }: { message: string }) {

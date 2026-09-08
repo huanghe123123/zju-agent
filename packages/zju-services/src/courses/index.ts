@@ -21,9 +21,56 @@ const BASE = "https://courses.zju.edu.cn";
 export class CoursesService {
   constructor(private courses: COURSES) {}
 
+  private reloginPromise: Promise<boolean> | null = null;
+
+  private async relogin(): Promise<boolean> {
+    if (this.reloginPromise) {
+      return this.reloginPromise;
+    }
+    this.reloginPromise = (async () => {
+      const orig = console.log;
+      try {
+        console.log = () => {};
+        return await this.courses.login();
+      } finally {
+        console.log = orig;
+        this.reloginPromise = null;
+      }
+    })();
+    return this.reloginPromise;
+  }
+
+  private async fetchWithAutoRelogin(
+    url: string,
+    init?: RequestInit,
+  ): Promise<Response> {
+    const doFetch = () => this.courses.fetch(url, init);
+    let res = await doFetch();
+
+    if (res.status === 401 || res.status === 403 || res.status === 302) {
+      try {
+        await this.relogin();
+        res = await doFetch();
+      } catch {}
+    } else if (res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/html")) {
+        const clone = res.clone();
+        const text = await clone.text();
+        if (text.includes("zjuam.zju.edu.cn") || text.includes("统一身份认证")) {
+          try {
+            await this.relogin();
+            res = await doFetch();
+          } catch {}
+        }
+      }
+    }
+    return res;
+  }
+
   /** 学期列表 */
   async getSemesters(): Promise<Semester[]> {
-    const res = await this.courses.fetch(`${BASE}/api/my-semesters?`);
+    const res = await this.fetchWithAutoRelogin(`${BASE}/api/my-semesters?`);
     const json = (await res.json()) as {
       semesters?: Array<{
         id: number;
@@ -60,14 +107,14 @@ export class CoursesService {
       `${BASE}/api/my-courses?conditions=` +
       encodeURIComponent(
         JSON.stringify({
-          status: ["ongoing", "notStarted"],
+          status: ["ongoing", "notStarted", "ended"],
           keyword: "",
           classify_type: "recently_started",
           display_studio_list: false,
         }),
       ) +
       `&fields=id,name,semester_id,course_attributes&page=1&page_size=1000`;
-    const res = await this.courses.fetch(url);
+    const res = await this.fetchWithAutoRelogin(url);
     const json = (await res.json()) as {
       courses?: Array<{
         id: number;
@@ -97,7 +144,7 @@ export class CoursesService {
         }),
       ) +
       `&page=1&page_size=1000`;
-    const res = await this.courses.fetch(url);
+    const res = await this.fetchWithAutoRelogin(url);
     const json = (await res.json()) as {
       activities?: Array<{
         id: number;
@@ -124,7 +171,7 @@ export class CoursesService {
   /** 作业列表 */
   async getAssignments(courseId: string, courseName: string): Promise<Assignment[]> {
     const url = `${BASE}/api/courses/${encodeURIComponent(courseId)}/homework-activities?page=1&page_size=1000`;
-    const res = await this.courses.fetch(url);
+    const res = await this.fetchWithAutoRelogin(url);
     const json = (await res.json()) as {
       homework_activities?: Array<{
         id: number;
@@ -156,7 +203,7 @@ export class CoursesService {
   /** 测试/小测列表 */
   async getQuizzes(courseId: string, courseName: string): Promise<Quiz[]> {
     const url = `${BASE}/api/courses/${encodeURIComponent(courseId)}/exam-list?page=1&page_size=100`;
-    const res = await this.courses.fetch(url);
+    const res = await this.fetchWithAutoRelogin(url);
     const json = (await res.json()) as {
       exams?: Array<{
         id: number;
@@ -192,7 +239,7 @@ export class CoursesService {
     const url = opts?.officePdf
       ? `${BASE}/api/uploads/document/${encodeURIComponent(fileId)}/url?preview=true`
       : `${BASE}/api/uploads/${encodeURIComponent(fileId)}/blob`;
-    const res = await this.courses.fetch(url);
+    const res = await this.fetchWithAutoRelogin(url);
     if (!res.ok) {
       // 明确指出 fileId 与状态，便于排查 id 误用（referenceId vs upload id）
       throw new AppError(
@@ -205,7 +252,7 @@ export class CoursesService {
       if (!meta.url) {
         throw new AppError(ErrorCode.FILE_DOWNLOAD_FAILED, "预览 URL 缺失。");
       }
-      const inner = await this.courses.fetch(meta.url);
+      const inner = await this.fetchWithAutoRelogin(meta.url);
       if (!inner.ok) {
         throw new AppError(
           ErrorCode.FILE_DOWNLOAD_FAILED,

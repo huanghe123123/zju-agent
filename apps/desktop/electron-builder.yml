@@ -1,0 +1,43 @@
+appId: com.zju-campus-agent.app
+productName: ZJU Campus Agent
+copyright: Copyright © 2025
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - "!dist/server/**"
+  - "!dist/server/node_modules/.cache"
+
+extraResources:
+  - from: dist/server
+    to: server
+
+asar: true
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+npmRebuild: false
+includeSubNodeModules: false
+
+# 前端文件（从 web build 拷贝过来）
+afterPack: scripts/after-pack.js
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  icon: build/icon.png
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.education
+
+win:
+  target:
+    - target: portable
+      arch: [x64]

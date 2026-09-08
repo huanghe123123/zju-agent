@@ -14,72 +14,37 @@ import type {
   AgentTool,
   ToolResult,
   ToolContext,
-  Semester,
   Course,
+  TimetableEntry,
+  Exam,
+  Assignment,
 } from "@zju-agent/core";
 import type { ServicesContainer } from "../services.js";
 import type { ServerConfig } from "../config/env.js";
-import { activeXnxq01ids, semesterToXnxq01id } from "@zju-agent/zju-services";
 import { logger } from "../config/logger.js";
 
 export type ToolDeps = ServicesContainer & { config: ServerConfig };
 
-/** 解析 stuId + 活跃学期（带缓存优先），供 zdbk 工具复用 */
-async function resolveStuAndSemesters(
-  deps: ToolDeps,
-): Promise<{ stuId: string; semesters: Semester[] }> {
+/** 解析当前已配置的学号（绝不调用学在浙大接口） */
+async function resolveStuId(deps: ToolDeps): Promise<string> {
   const cred = await deps.auth.getCredential();
-  if (!cred) {
-    return { stuId: "", semesters: [] };
-  }
-  let semesters = deps.cache.get<Semester[]>("courses:semesters");
-  if (!semesters) {
-    const adapters = await deps.auth.getServiceAdapters();
-    semesters = await adapters.courses.getSemesters();
-    deps.cache.set("courses:semesters", semesters);
-  }
-  return { stuId: cred.username, semesters };
-}
-
-function activeIds(semesters: Semester[]): string[] {
-  return activeXnxq01ids(semesters);
-}
-
-/** 选取目标学期：活跃 → 最近（与路由 pickSemester 保持一致） */
-function pickTargetSemester(
-  semesters: Semester[],
-  requested?: string,
-): string | undefined {
-  if (requested) {
-    // 验证请求的学期是否存在于已知列表中
-    for (const s of semesters) {
-      if (semesterToXnxq01id(s.name) === requested) return requested;
-    }
-  }
-  const active = activeIds(semesters);
-  if (active.length > 0) return active[0];
-  // 无活跃学期 → 取最近一次
-  const ids = new Map<string, Semester>();
-  for (const s of semesters) {
-    const id = semesterToXnxq01id(s.name);
-    if (id) ids.set(id, s);
-  }
-  const sorted = [...ids.keys()].sort((a, b) => b.localeCompare(a));
-  return sorted[0];
+  return cred?.username ?? "";
 }
 
 /** 工厂：构建工具实例。依赖运行时服务，故每次请求构建一次。 */
 export function buildTools(deps: ToolDeps): AgentTool[] {
   return [
+    makeGetUpcomingSchedule(deps),
+    makeGetDailySchedule(deps),
     makeGetCourses(deps),
     makeGetAssignments(deps),
     makeGetCourseMaterials(deps),
     makeGetQuizzes(deps),
     makeGetExams(deps),
     makeGetTimetable(deps),
+    makeGetGrades(deps),
     makeDownloadCourseMaterial(deps),
     makeBatchDownload(deps),
-    makeGetWeather(deps),
   ];
 }
 
@@ -89,7 +54,7 @@ function makeGetCourses(deps: ToolDeps): AgentTool {
   return {
     name: "zju_get_courses",
     description:
-      "查询课程列表（学在浙大）。返回课程 id、名称、学期、教学班。默认返回所有学期课程，也可指定 semester 过滤（格式 \"2024-2025-1\"=秋冬 或 \"2024-2025-2\"=春夏）。用户询问\"我有哪些课\"\"这学期课程\"时调用。",
+      "查询课程列表（学在浙大）。返回课程 id、名称、学期、教学班。不返回学分/成绩。默认返回所有学期。仅用于查课件或下载时获取课程 id，查课表用 zju_get_timetable，查学分成绩用 zju_get_grades。",
     inputSchema: {
       type: "object",
       properties: {
@@ -233,17 +198,17 @@ function makeGetQuizzes(deps: ToolDeps): AgentTool {
   };
 }
 
-function makeGetExams(deps: ToolDeps): AgentTool {
+function makeGetUpcomingSchedule(deps: ToolDeps): AgentTool {
   return {
-    name: "zju_get_exams",
+    name: "zju_get_upcoming_schedule",
     description:
-      "查询考试安排（教务网）。返回期末与期中考试，含时间、地点、座位号，按时间升序。默认返回当前学期，也可通过 semester 指定学期（格式 \"2024-2025-2\"=春夏）。用户问“我有什么考试”“考试安排”“上学期考了什么”时调用。",
+      "查询接下来48小时内的实时校园日程流（包含正在进行或即将开始的课程与考试，以及48小时内即将截止的作业待办）。仿照 Celechron 体系构建，自带精准倒计时、地点、教师、作业截止时间。当用户询问“接下来有什么课/安排”“今天/明天接下来做什么”“未来48小时安排”“最近有什么作业快截止了”“现在正在上什么课”时优先调用本工具。",
     inputSchema: {
       type: "object",
       properties: {
         semester: {
           type: "string",
-          description: "可选，教务网学期 id，如 \"2024-2025-2\"。不传则取当前活跃学期。",
+          description: "可选，教务网学期 id（如 \"2026-2027-1\"）。不传自动根据公历推算当前学期。",
         },
       },
       additionalProperties: false,
@@ -252,9 +217,157 @@ function makeGetExams(deps: ToolDeps): AgentTool {
     requiresConfirmation: false,
     async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
-        const { stuId, semesters } = await resolveStuAndSemesters(deps);
+        const stuId = await resolveStuId(deps);
         const reqSemester = (input as { semester?: string } | null)?.semester;
-        const target = pickTargetSemester(semesters, reqSemester);
+        const targetSem = reqSemester ?? deps.calendar.getCurrentSemesterId();
+
+        // 1. 获取课表（缓存优先）
+        const ttKey = `zdbk:timetable:${targetSem}`;
+        let entries = deps.cache.get<TimetableEntry[]>(ttKey);
+        const adapters = await deps.auth.getServiceAdapters();
+        if (!entries) {
+          try {
+            entries = await adapters.zdbk.getTimetable(stuId, targetSem);
+            deps.cache.set(ttKey, entries);
+          } catch {
+            entries = [];
+          }
+        }
+
+        // 2. 获取考试（缓存优先）
+        const examKey = `zdbk:exams:${targetSem}`;
+        let exams = deps.cache.get<Exam[]>(examKey);
+        if (!exams) {
+          try {
+            exams = await adapters.zdbk.getExams(stuId, [targetSem]);
+            deps.cache.set(examKey, exams);
+          } catch {
+            exams = [];
+          }
+        }
+
+        // 3. 关联待办作业
+        let assignments = deps.cache.get<Assignment[]>("courses:assignments:all");
+        if (!assignments) {
+          try {
+            const courses = await adapters.courses.getCourses();
+            const all: Assignment[] = [];
+            for (const c of courses) {
+              try {
+                const list = await adapters.courses.getAssignments(c.id, c.name);
+                all.push(...list);
+              } catch {
+                // ignore
+              }
+            }
+            deps.cache.set("courses:assignments:all", all, 10 * 60_000);
+            assignments = all;
+          } catch {
+            assignments = [];
+          }
+        }
+
+        return await deps.calendar.getUpcomingSchedule48h({
+          timetableEntries: entries ?? [],
+          exams: exams ?? [],
+          assignments: assignments ?? [],
+          semesterId: targetSem,
+        });
+      });
+    },
+  };
+}
+
+function makeGetDailySchedule(deps: ToolDeps): AgentTool {
+  return {
+    name: "zju_get_daily_schedule",
+    description:
+      "查询某一日的综合校园日程（包含当天实际上的课程、当天的考试、当天到期的作业）。自动结合浙大校历计算教学周次、是否放假、是否调休补课。当用户问“今天有什么安排”“明天日程”“周三有什么事”“今天放假吗”时优先调用本工具。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description: "可选，日期描述，支持 \"today\"（今天）、\"tomorrow\"（明天）、\"yesterday\"（昨天）或 \"YYYY-MM-DD\"。不传默认 \"today\"。",
+        },
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id（如 \"2026-2027-1\"）。不传自动根据公历推算当前学期。",
+        },
+      },
+      additionalProperties: false,
+    },
+    riskLevel: "read",
+    requiresConfirmation: false,
+    async execute(input, ctx): Promise<ToolResult> {
+      return runRead(ctx, async () => {
+        const stuId = await resolveStuId(deps);
+        const reqDate = (input as { date?: string } | null)?.date ?? "today";
+        const reqSemester = (input as { semester?: string } | null)?.semester;
+        const targetSem = reqSemester ?? deps.calendar.getCurrentSemesterId();
+
+        // 1. 获取课表（缓存优先）
+        const ttKey = `zdbk:timetable:${targetSem}`;
+        let entries = deps.cache.get<TimetableEntry[]>(ttKey);
+        const adapters = await deps.auth.getServiceAdapters();
+        if (!entries) {
+          try {
+            entries = await adapters.zdbk.getTimetable(stuId, targetSem);
+            deps.cache.set(ttKey, entries);
+          } catch {
+            entries = [];
+          }
+        }
+
+        // 2. 获取考试（缓存优先）
+        const examKey = `zdbk:exams:${targetSem}`;
+        let exams = deps.cache.get<Exam[]>(examKey);
+        if (!exams) {
+          try {
+            exams = await adapters.zdbk.getExams(stuId, [targetSem]);
+            deps.cache.set(examKey, exams);
+          } catch {
+            exams = [];
+          }
+        }
+
+        // 3. 关联待办作业
+        const assignments = deps.cache.get<Assignment[]>("courses:assignments:all") ?? [];
+
+        return await deps.calendar.getDailySchedule({
+          timetableEntries: entries ?? [],
+          exams: exams ?? [],
+          assignments,
+          date: reqDate,
+          semesterId: targetSem,
+        });
+      });
+    },
+  };
+}
+
+function makeGetExams(deps: ToolDeps): AgentTool {
+  return {
+    name: "zju_get_exams",
+    description:
+      "查询考试安排（教务网）。返回期末与期中考试，含时间、地点、座位号，按时间升序。默认返回当前学期，也可通过 semester 指定学期（格式 \"2026-2027-1\"=秋冬）。用户问“我有什么考试”“考试安排”“上学期考了什么”时调用。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id，如 \"2026-2027-1\"。不传自动取当前学期。",
+        },
+      },
+      additionalProperties: false,
+    },
+    riskLevel: "read",
+    requiresConfirmation: false,
+    async execute(input, ctx): Promise<ToolResult> {
+      return runRead(ctx, async () => {
+        const stuId = await resolveStuId(deps);
+        const reqSemester = (input as { semester?: string } | null)?.semester;
+        const target = reqSemester ?? deps.calendar.getCurrentSemesterId();
         if (!target) return [];
         const cacheKey = `zdbk:exams:${target}`;
         const cached = deps.cache.get(cacheKey);
@@ -272,13 +385,17 @@ function makeGetTimetable(deps: ToolDeps): AgentTool {
   return {
     name: "zju_get_timetable",
     description:
-      "查询课程表（教务网）。返回课表条目，含课程名、教师、地点、星期、节次、周次。默认返回当前学期，也可通过 semester 指定学期（格式 \"2024-2025-1\"=秋冬）。用户问“我有什么课”“课表”“明天有什么课”“上学期课表”时调用。",
+      "查询课程表（教务网）。返回课表条目（含课程名、教师、地点、星期、节次、周次）。支持传入 date 查询某天真实课表（自动按校历剔除假期并处理调休换日）。用户问“我有什么课”“明天有什么课”“今天下午有什么课”时调用。",
     inputSchema: {
       type: "object",
       properties: {
+        date: {
+          type: "string",
+          description: "可选，具体日期或相对时间：\"today\"（今天）、\"tomorrow\"（明天）或 \"YYYY-MM-DD\"。指定时将按浙大校历计算当天真实课程（自动处理法定节假日与调休补课）。",
+        },
         semester: {
           type: "string",
-          description: "可选，教务网学期 id，如 \"2024-2025-1\"。不传则取当前活跃学期。",
+          description: "可选，教务网学期 id，如 \"2026-2027-1\"。不传自动取当前学期。",
         },
       },
       additionalProperties: false,
@@ -287,31 +404,51 @@ function makeGetTimetable(deps: ToolDeps): AgentTool {
     requiresConfirmation: false,
     async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
-        const { stuId, semesters } = await resolveStuAndSemesters(deps);
+        const stuId = await resolveStuId(deps);
         const reqSemester = (input as { semester?: string } | null)?.semester;
-        const xnxq = pickTargetSemester(semesters, reqSemester);
-        if (!xnxq) return [];
-        const cacheKey = `zdbk:timetable:${xnxq}`;
-        const cached = deps.cache.get(cacheKey);
-        if (cached) return cached;
-        const adapters = await deps.auth.getServiceAdapters();
-        const entries = await adapters.zdbk.getTimetable(stuId, xnxq);
-        deps.cache.set(cacheKey, entries);
+        const targetSem = reqSemester ?? deps.calendar.getCurrentSemesterId();
+        if (!targetSem) return [];
+        const cacheKey = `zdbk:timetable:${targetSem}`;
+        let entries = deps.cache.get<TimetableEntry[]>(cacheKey);
+        if (!entries) {
+          const adapters = await deps.auth.getServiceAdapters();
+          entries = await adapters.zdbk.getTimetable(stuId, targetSem);
+          deps.cache.set(cacheKey, entries);
+        }
+
+        const reqDate = (input as { date?: string } | null)?.date;
+        if (reqDate) {
+          const daily = await deps.calendar.getDailySchedule({
+            timetableEntries: entries ?? [],
+            date: reqDate,
+            semesterId: targetSem,
+          });
+          return {
+            date: daily.date,
+            dateInfo: daily.dateInfo,
+            summary: daily.summary,
+            classes: daily.events.filter((e) => e.type === "class"),
+          };
+        }
+
         return entries;
       });
     },
   };
 }
 
-function makeGetWeather(deps: ToolDeps): AgentTool {
+function makeGetGrades(deps: ToolDeps): AgentTool {
   return {
-    name: "weather_get_current",
+    name: "zju_get_grades",
     description:
-      "查询某城市当前天气。默认杭州。用户问“明天天气怎么样”“杭州天气”时调用。天气走公开接口，不需要 ZJU 账号。",
+      "查询成绩和学分（教务网）。返回每门课的原始成绩、学分(credit)、五分制绩点(fivePoint)。这是唯一能查到学分的接口，zju_get_courses 不返回学分。默认返回所有学期。用户问'学分''绩点''成绩''GPA'时必须调本工具。",
     inputSchema: {
       type: "object",
       properties: {
-        city: { type: "string", description: "城市名，默认杭州" },
+        semester: {
+          type: "string",
+          description: "可选，教务网学期 id。不传则返回所有学期成绩。",
+        },
       },
       additionalProperties: false,
     },
@@ -319,10 +456,15 @@ function makeGetWeather(deps: ToolDeps): AgentTool {
     requiresConfirmation: false,
     async execute(input, ctx): Promise<ToolResult> {
       return runRead(ctx, async () => {
-        const city =
-          (input as { city?: string } | null)?.city?.trim() || "杭州";
-        // 天气走公开 wttr.in，与 ZJU 账号无关，不经过 getServiceAdapters
-        return deps.weather.getCurrent(city);
+        const stuId = await resolveStuId(deps);
+        const target = (input as { semester?: string } | null)?.semester ?? "";
+        const cacheKey = `zdbk:grades:${target}`;
+        const cached = deps.cache.get(cacheKey);
+        if (cached) return cached;
+        const adapters = await deps.auth.getServiceAdapters();
+        const grades = await adapters.zdbk.getGrades(stuId, target);
+        deps.cache.set(cacheKey, grades);
+        return grades;
       });
     },
   };

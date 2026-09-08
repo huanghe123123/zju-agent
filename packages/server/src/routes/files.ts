@@ -16,8 +16,14 @@ import { ok, wrap, AppError, ErrorCode } from "@zju-agent/core";
 import type { ServicesContainer } from "../services.js";
 import type { ServerConfig } from "../config/env.js";
 import { logger } from "../config/logger.js";
-import { resolve } from "node:path";
-import { createReadStream, statSync, existsSync } from "node:fs";
+import { resolve, sep } from "node:path";
+import {
+  createReadStream,
+  statSync,
+  existsSync,
+  realpathSync,
+  unlinkSync,
+} from "node:fs";
 
 export function filesRoutes(
   deps: ServicesContainer & { config: ServerConfig },
@@ -41,12 +47,11 @@ export function filesRoutes(
         if (!record) {
           throw new AppError(ErrorCode.FILE_NOT_FOUND, "下载记录不存在。");
         }
-        // 路径安全：必须在下载目录内，防越界
-        const downloadDir = resolve(deps.config.downloadDir);
-        const target = resolve(record.filePath);
-        if (!target.startsWith(downloadDir + "/") && target !== downloadDir) {
+        // 路径安全：必须在下载目录内（含符号链接解析），防越界
+        if (!isWithin(deps.config.downloadDir, record.filePath)) {
           throw new AppError(ErrorCode.FILE_NOT_FOUND, "文件路径非法。");
         }
+        const target = resolve(record.filePath);
         if (!existsSync(target)) {
           throw new AppError(
             ErrorCode.FILE_NOT_FOUND,
@@ -64,7 +69,8 @@ export function filesRoutes(
         reply.header("Content-Length", String(stat.size));
         reply.header("Cache-Control", "no-store");
         logger.info("读取下载文件", { id: record.id, fileName: record.fileName, inline });
-        return reply.send(createReadStream(target));
+        reply.send(createReadStream(target));
+        return;
       });
     });
 
@@ -76,11 +82,19 @@ export function filesRoutes(
           if (!removed) {
             throw new AppError(ErrorCode.FILE_NOT_FOUND, "下载记录不存在。");
           }
-          // purge=1 同时删除文件本体
+          // purge=1 同时删除文件本体（同样做目录约束，防越界删除）
           if (req.query.purge === "1") {
             try {
-              const { unlinkSync } = await import("node:fs");
-              if (existsSync(removed.filePath)) unlinkSync(removed.filePath);
+              if (
+                isWithin(deps.config.downloadDir, removed.filePath) &&
+                existsSync(removed.filePath)
+              ) {
+                unlinkSync(removed.filePath);
+              } else {
+                logger.warn("拒绝删除下载目录外的文件", {
+                  filePath: removed.filePath,
+                });
+              }
             } catch (err) {
               logger.warn("删除文件本体失败", {
                 filePath: removed.filePath,
@@ -95,9 +109,29 @@ export function filesRoutes(
 
     app.delete("/downloads", async () => {
       deps.downloads.clear();
-      return { ok: true };
+      return ok({ ok: true });
     });
   };
+}
+
+/**
+ * 目录约束校验：target 必须位于 baseDir 内。
+ * 优先解析真实路径（realpath），符号链接指向目录外时判定非法。
+ */
+function isWithin(baseDir: string, target: string): boolean {
+  const base = resolve(baseDir);
+  const t = resolve(target);
+  if (t === base) return true;
+  if (!t.startsWith(base + sep)) return false;
+  try {
+    const rb = realpathSync(base);
+    const rt = realpathSync(t);
+    if (rt === rb) return true;
+    return rt.startsWith(rb + sep);
+  } catch {
+    // 目标不存在（realpath 失败）时，字符串前缀校验已通过，后续 existsSync 会拦截
+    return true;
+  }
 }
 
 function guessMime(fileName: string): string {

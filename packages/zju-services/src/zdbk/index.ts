@@ -8,7 +8,7 @@
 
 import type { ZDBK } from "login-zju";
 import type { Exam, Grade, TimetableEntry, Semester } from "@zju-agent/core";
-import { AppError, ErrorCode } from "@zju-agent/core";
+import { AppError, ErrorCode, mergeTimetableEntries } from "@zju-agent/core";
 
 const BASE = "https://zdbk.zju.edu.cn/jwglxt";
 
@@ -26,6 +26,76 @@ function zdbkHeaders(): Record<string, string> {
 
 export class ZdbkService {
   constructor(private zdbk: ZDBK) {}
+
+  private reloginPromise: Promise<boolean> | null = null;
+
+  private async relogin(): Promise<boolean> {
+    if (this.reloginPromise) {
+      return this.reloginPromise;
+    }
+    this.reloginPromise = (async () => {
+      const orig = console.log;
+      try {
+        console.log = () => {};
+        return await this.zdbk.login();
+      } finally {
+        console.log = orig;
+        this.reloginPromise = null;
+      }
+    })();
+    return this.reloginPromise;
+  }
+
+  /**
+   * 带会话失效自动重登的 ZDBK 请求包装。
+   * 正方教务系统在 session 超时（15~30分钟）后会返回 HTTP 901 或 302 重定向到登录页。
+   * 检测到超时时自动触发 this.zdbk.login() 刷新 cookie，并重试一次请求。
+   */
+  private async fetchWithAutoRelogin(
+    url: string,
+    init?: RequestInit,
+  ): Promise<Response> {
+    const doFetch = () => this.zdbk.fetch(url, init);
+    let res = await doFetch();
+
+    const isSessionExpired = (status: number, text?: string) => {
+      if (status === 901 || status === 302 || status === 401 || status === 403) return true;
+      if (
+        text &&
+        (text.includes("login_ssologin") ||
+          text.includes("cas/login") ||
+          text.includes("统一身份认证") ||
+          text.includes("未登录"))
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    if (isSessionExpired(res.status)) {
+      try {
+        await this.relogin();
+        res = await doFetch();
+      } catch {}
+    } else if (res.ok) {
+      const clone = res.clone();
+      const text = await clone.text();
+      const trimmed = text.trim();
+      if (
+        trimmed.startsWith("<") ||
+        trimmed.includes("login_ssologin") ||
+        trimmed.includes("cas/login") ||
+        trimmed.includes("统一身份认证")
+      ) {
+        try {
+          await this.relogin();
+          res = await doFetch();
+        } catch {}
+      }
+    }
+
+    return res;
+  }
 
   /**
    * 考试安排。参照 Fiz test.rs get_tests（form body → 干净 JSON）：
@@ -47,7 +117,7 @@ export class ZdbkService {
       "queryModel.sortOrder": "desc",
       time: "0",
     });
-    const res = await this.zdbk.fetch(url, {
+    const res = await this.fetchWithAutoRelogin(url, {
       method: "POST",
       body: form,
       headers: zdbkHeaders(),
@@ -61,18 +131,17 @@ export class ZdbkService {
     }
     const text = await res.text();
 
-    // 解析：优先按干净 JSON（Fiz 路径），失败则回退到正则（CeleChron 路径）
+    // 解析：优先按干净 JSON（Fiz 路径），失败则回退到容错提取（CeleChron 路径）
     let items: unknown[];
     try {
       const json = JSON.parse(text) as { items?: unknown[] };
       items = json.items ?? [];
     } catch {
-      // 回退：CeleChron 风格的正则提取
-      const itemsJson =
-        /(?<="items":)\[(.*?)\](?=,"limit")/.exec(text)?.[1];
+      // 回退：CeleChron 风格——容错扫描 "items":[ ... ]（支持嵌套/换行）
+      const itemsJson = extractItemsArray(text);
       if (itemsJson) {
         try {
-          items = JSON.parse(`[${itemsJson}]`) as unknown[];
+          items = JSON.parse(itemsJson) as unknown[];
         } catch {
           return [];
         }
@@ -85,9 +154,9 @@ export class ZdbkService {
       if (!item || typeof item !== "object") continue;
       const r = item as Record<string, unknown>;
       const xkkh = String(r["xkkh"] ?? "");
-      // xkkh 形如 "(2024-2025-2)-...-..."；切片 [1..12] 取 semesterId
-      const semId = xkkh.slice(1, 12);
-      if (!activeSemesters.includes(semId)) continue;
+      // xkkh 形如 "(2024-2025-2)-...-..."；用正则提取学期 id，避免硬编码切片
+      const semId = semesterFromXkkh(xkkh);
+      if (!semId || !activeSemesters.includes(semId)) continue;
       // 期末：kssj + jsmc + zwxh
       const kssj = r["kssj"];
       if (kssj != null && kssj !== "") {
@@ -154,7 +223,7 @@ export class ZdbkService {
       });
       let res: Response;
       try {
-        res = await this.zdbk.fetch(url, {
+        res = await this.fetchWithAutoRelogin(url, {
           method: "POST",
           body: form,
           headers: zdbkHeaders(),
@@ -185,7 +254,7 @@ export class ZdbkService {
         all.push(entry);
       }
     }
-    return all;
+    return mergeTimetableEntries(all);
   }
 
   /**
@@ -200,42 +269,92 @@ export class ZdbkService {
     _stuId: string,
     xnxq01id: string,
   ): Promise<Grade[]> {
+    // ZDBK 成绩接口：空 body，只带 headers
     const url = `${BASE}/cxdy/xscjcx_cxXscjIndex.html?doType=query&queryModel.showCount=5000`;
-    const form = new URLSearchParams({
-      _search: "false",
-      nd: String(Date.now()),
-      "queryModel.showCount": "5000",
-      "queryModel.currentPage": "1",
-      "queryModel.sortName": "xkkh",
-      "queryModel.sortOrder": "desc",
-      time: "0",
-    });
-    const res = await this.zdbk.fetch(url, {
+    const res = await this.fetchWithAutoRelogin(url, {
       method: "POST",
-      body: form,
-      headers: zdbkHeaders(),
+      headers: {
+        Referer: `${BASE}/xtgl/index_initMenu.html`,
+        "X-Requested-With": "XMLHttpRequest",
+        Accept: "application/json, text/javascript, */*; q=0.01",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      },
     });
     if (!res.ok) {
+      throw new AppError(ErrorCode.ZJU_RESPONSE_PARSE_FAILED, `成绩接口 HTTP ${res.status}`, { retryable: true });
+    }
+    const text = await res.text();
+    // 容错提取 items（正则失败时不泄露原始响应内容）
+    const itemsJson = extractItemsArray(text);
+    if (!itemsJson) {
       throw new AppError(
         ErrorCode.ZJU_RESPONSE_PARSE_FAILED,
-        `教务网成绩接口返回 HTTP ${res.status}`,
+        "成绩接口响应格式异常，无法提取成绩数据。",
         { retryable: true },
       );
     }
-    const json = (await res.json()) as {
-      items?: Array<Record<string, unknown>>;
-    };
-    const items = json.items ?? [];
+    let items: unknown[];
+    try {
+      items = JSON.parse(itemsJson) as unknown[];
+    } catch {
+      throw new AppError(
+        ErrorCode.ZJU_RESPONSE_PARSE_FAILED,
+        "成绩接口返回数据解析失败。",
+        { retryable: true },
+      );
+    }
     const grades: Grade[] = [];
     for (const item of items) {
-      const xkkh = String(item["xkkh"] ?? "");
+      if (!item || typeof item !== "object") continue;
+      const r = item as Record<string, unknown>;
+      const xkkh = String(r["xkkh"] ?? "");
       if (!xkkh) continue;
-      const semId = xkkh.slice(1, 12);
+      const semId = semesterFromXkkh(xkkh);
+      if (!semId) continue;
       if (xnxq01id && semId !== xnxq01id) continue;
       grades.push(toGrade(item, semId));
     }
     return grades;
   }
+}
+
+/**
+ * 容错提取 `"items":[ ... ]` 数组（支持嵌套对象/字符串/换行）。
+ * 逐字符扫描括号配对，规避正则对单行 JSON 的脆弱依赖。
+ */
+function extractItemsArray(text: string): string | null {
+  const key = '"items"';
+  const idx = text.indexOf(key);
+  if (idx === -1) return null;
+  const colon = text.indexOf(":", idx + key.length);
+  if (colon === -1) return null;
+  let i = colon + 1;
+  while (i < text.length && /\s/.test(text[i] ?? "")) i++;
+  if (text[i] !== "[") return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[") depth++;
+    else if (ch === "]") {
+      depth--;
+      if (depth === 0) return text.slice(colon + 1, i + 1);
+    }
+  }
+  return null;
+}
+
+/** 从 xkkh 中提取学期 id（如 "(2024-2025-2)-..." → "2024-2025-2"） */
+function semesterFromXkkh(xkkh: string): string | undefined {
+  return /(\d{4}-\d{4}-[12])/.exec(xkkh)?.[1];
 }
 
 /** 解析课表响应。CeleChron 用正则切 kbList；这里直接 JSON.parse（字段名不变） */
@@ -360,30 +479,28 @@ function parseExamDateTime(raw: string): string {
 }
 
 /**
- * 把成绩条目转 Grade。字段对照 CeleChron Grade（lib/model/grade.dart:74-95）
- * xkkh=课程号, kcmc=课程名, xf=学分, cj=原始成绩, jd=五分制绩点
+ * 把成绩条目转 Grade。
+ * 兼容两种来源：zdbk (kcmc/cj/xf/jd/xkkh) 和 ETA (KCMC/CJ/XF/JD/BZ/XN/XQ)
  */
-function toGrade(item: unknown, semester: string): Grade {
-  const r = (item && typeof item === "object" ? item : {}) as Record<
-    string,
-    unknown
-  >;
-  const original = String(r["cj"] ?? "");
-  const fivePoint = Number(r["jd"] ?? 0) || 0;
-  const credit = Number(r["xf"] ?? 0) || 0;
-  // 计入学分：弃修/待录/缓考/无效不计
-  const creditIncluded = !["弃修", "待录", "缓考", "无效"].includes(original);
-  // 计入 GPA：在 creditIncluded 基础上排除 合格/不合格/体网课(xtwkc)
-  const xkkh = String(r["xkkh"] ?? "");
-  const gpaIncluded =
-    creditIncluded &&
-    !["合格", "不合格"].includes(original) &&
-    !xkkh.includes("xtwkc");
+function toGrade(item: unknown, _semester: string): Grade {
+  const r = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+  // ETA 字段优先（大写），fallback 到 zdbk 字段（小写）
+  const courseName = String(r["KCMC"] ?? r["kcmc"] ?? "");
+  const original = String(r["CJ"] ?? r["cj"] ?? "");
+  const fivePoint = Number(r["JD"] ?? r["jd"] ?? 0) || 0;
+  const credit = Number(r["XF"] ?? r["xf"] ?? 0) || 0;
+  const bz = String(r["BZ"] ?? r["bz"] ?? "");
+  const courseId = String(r["KCH"] ?? r["xkkh"] ?? "");
+  // 学期从 ETA 的 XN+XQ 拼接，或从 zdbk 的 xkkh 切片
+  let semester = _semester;
+  if (!semester && r["XN"] && r["XQ"]) {
+    semester = `${String(r["XN"])}-${String(r["XQ"])}`;
+  }
+  const creditIncluded = !["弃修", "待录", "缓考", "无效"].includes(original) && bz !== "弃修";
+  const gpaIncluded = creditIncluded && !["合格", "不合格"].includes(original) && !courseId.includes("xtwkc");
   return {
-    id: String(r["xkkh"] ?? ""),
-    courseName: String(r["kcmc"] ?? "")
-      .replaceAll("(", "（")
-      .replaceAll(")", "）"),
+    id: courseId || `${courseName}-${semester}`,
+    courseName: courseName.replaceAll("(", "（").replaceAll(")", "）"),
     credit,
     original,
     fivePoint,
@@ -407,16 +524,23 @@ export function semesterToXnxq01id(name: string): string | null {
   return `${year}-${id}`;
 }
 
-/** 给定学在浙大学期列表，产出教务网活跃学期标识集合（含拆分后的子学期合并） */
-export function activeXnxq01ids(semesters: Semester[]): string[] {
+/** 给定学在浙大学期列表，产出教务网所有学期标识集合 */
+export function allXnxq01ids(semesters: Semester[]): string[] {
   const ids = new Set<string>();
   for (const s of semesters) {
-    if (!s.isActive) continue;
     const id = semesterToXnxq01id(s.name);
     if (id) ids.add(id);
   }
   return [...ids];
 }
+
+/** @deprecated 使用 allXnxq01ids 代替，不再依赖 isActive */
+export function activeXnxq01ids(semesters: Semester[]): string[] {
+  return allXnxq01ids(semesters);
+}
+
+export { getAcademicPeriod, currentXnxq01id } from "@zju-agent/core";
+export type { AcademicPeriod } from "@zju-agent/core";
 
 /**
  * 把教务网 xnxq01id 拆成 CeleChron 风格的 (year, season) 请求对。

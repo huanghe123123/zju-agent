@@ -14,6 +14,7 @@ import type {
   Exam,
   TimetableEntry,
   Grade,
+  UpcomingSchedule48h,
 } from "@zju-agent/core";
 import { useApiFetch } from "./bootstrap.js";
 
@@ -268,3 +269,23 @@ export function useGrades(xnxq01id?: string) {
     throwOnError: false,
   });
 }
+
+/** 接下来 48 小时日程流与待办（仿 Celechron 页面） */
+export function useUpcomingSchedule48h(xnxq01id?: string) {
+  const apiFetch = useApiFetch();
+  return useQuery({
+    queryKey: ["zju", "schedule", "upcoming-48h", xnxq01id ?? "default"],
+    queryFn: async () => {
+      const qs = xnxq01id ? `?xnxq01id=${encodeURIComponent(xnxq01id)}` : "";
+      const res = await apiFetch(`/api/zju/schedule/upcoming-48h${qs}`);
+      const json = (await res.json()) as ApiResponse<UpcomingSchedule48h>;
+      if (!json.ok) throw new Error(json.error.message);
+      return json.data;
+    },
+    staleTime: 5 * 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+    throwOnError: false,
+  });
+}
+

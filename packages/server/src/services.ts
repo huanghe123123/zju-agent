@@ -13,7 +13,7 @@ import { ConfirmationRepo } from "./storage/confirmations.js";
 import type { CredentialStore } from "./auth/credentials.js";
 import type { ServerConfig } from "./config/env.js";
 import { AuthSessionManager } from "./auth/auth-session.js";
-import { WeatherService } from "@zju-agent/zju-services";
+import { CalendarService } from "@zju-agent/zju-services";
 import type { ZjuServices } from "@zju-agent/zju-services";
 
 export type ServicesContainer = {
@@ -28,8 +28,8 @@ export type ServicesContainer = {
   credentials: CredentialStore;
   auth: AuthSessionManager;
   zju: ZjuServices;
-  /** 天气走公开接口，与 ZJU 账号无关，独立持有 */
-  weather: WeatherService;
+  /** 校历服务，与 ZJU 账号无关，独立持有 */
+  calendar: CalendarService;
 };
 
 export function createServicesContainer(input: {
@@ -51,6 +51,6 @@ export function createServicesContainer(input: {
     credentials,
     auth: new AuthSessionManager(credentials, zju),
     zju,
-    weather: new WeatherService(),
+    calendar: new CalendarService(),
   };
 }
