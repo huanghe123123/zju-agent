@@ -148,7 +148,7 @@ function ExamsPanel({ xnxq01id }: { xnxq01id: string }) {
         </Button>
       </div>
 
-      <Section title="待考科目" exams={upcoming} emptyText="本学期暂无待考科目安排 🎉" />
+      <Section title="待考科目" exams={upcoming} emptyText="本学期暂无待考科目安排" />
       <Section title="已结束" exams={past} emptyText="无已结束的考试" />
       <Section title="待安排时间" exams={noTime} emptyText="无待安排的考试" />
     </div>

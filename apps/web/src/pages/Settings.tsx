@@ -3,6 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout.js";
 import { useApiFetch } from "../api/bootstrap.js";
 import { useValidateCredential, useLogout } from "../api/auth.js";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faRobot,
+  faLock,
+  faShieldHalved,
+  faTrashCan,
+  faClipboardList,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
 export function SettingsPage() {
   const apiFetch = useApiFetch();

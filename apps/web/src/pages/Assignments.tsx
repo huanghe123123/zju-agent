@@ -20,6 +20,13 @@ import {
   EmptyState,
   Segmented,
 } from "@crisp-ui-kit/crisp";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faCircleExclamation,
+  faClock,
+  faCircleXmark,
+  faCircleCheck,
+} from "@fortawesome/free-solid-svg-icons";
 
 const DEFAULT_URGENT_HOURS = 24;
 
@@ -79,21 +86,33 @@ export function AssignmentsPage() {
                 距截止 ≤ {urgentHours} 小时
               </div>
             </div>
-            <div className="space-y-1 rounded-md border border-slate-100 bg-slate-50 p-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-rose-600">🔴 将截止</span>
+            <div className="space-y-1.5 rounded-md border border-slate-100 bg-slate-50 p-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-rose-600 flex items-center gap-1.5">
+                  <FontAwesomeIcon icon={faCircleExclamation} className="text-[11px]" />
+                  <span>将截止</span>
+                </span>
                 <span className="font-medium">{urgent.length} 项</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-amber-600">🟡 还不急</span>
+              <div className="flex justify-between items-center">
+                <span className="text-amber-600 flex items-center gap-1.5">
+                  <FontAwesomeIcon icon={faClock} className="text-[11px]" />
+                  <span>还不急</span>
+                </span>
                 <span className="font-medium">{relaxed.length} 项</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">⚫ 已截止</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400 flex items-center gap-1.5">
+                  <FontAwesomeIcon icon={faCircleXmark} className="text-[11px]" />
+                  <span>已截止</span>
+                </span>
                 <span className="font-medium">{overdue.length} 项</span>
               </div>
-              <div className="flex justify-between border-t border-slate-200 pt-1">
-                <span className="text-emerald-600">✓ 已提交</span>
+              <div className="flex justify-between items-center border-t border-slate-200 pt-1">
+                <span className="text-emerald-600 flex items-center gap-1.5">
+                  <FontAwesomeIcon icon={faCircleCheck} className="text-[11px]" />
+                  <span>已提交</span>
+                </span>
                 <span className="font-medium">{submitted.length} 项</span>
               </div>
             </div>
@@ -180,14 +199,14 @@ export function AssignmentsPage() {
         <Card raised className="p-8 text-center">
           <EmptyState
             variant="default"
-            icon={<span className="text-3xl">🎉</span>}
+            icon={<FontAwesomeIcon icon={faCircleCheck} className="text-3xl text-emerald-500" />}
             title={
               tab === "urgent"
-                ? "暂无紧急作业 🎉"
+                ? "暂无紧急作业"
                 : tab === "relaxed"
                   ? "暂无常规作业"
                   : tab === "overdue"
-                    ? "暂无逾期作业 🎉"
+                    ? "暂无逾期作业"
                     : "暂无已提交作业"
             }
             description="当前分类下没有相关作业记录。"

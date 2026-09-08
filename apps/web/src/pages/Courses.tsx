@@ -12,6 +12,8 @@ import {
 } from "../api/zju.js";
 import { formatBytes } from "../utils/format.js";
 import type { Course, Semester } from "@zju-agent/core";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCalendarDays, faLightbulb, faXmark } from "@fortawesome/free-solid-svg-icons";
 
 /** 学在浙大学期名 → 教务网 xnxq01id */
 function semesterToXnxq01id(name: string): string | null {
@@ -121,7 +123,9 @@ export function CoursesPage() {
         </div>
       ) : xnxq01id === "all" ? (
         <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-          <div className="mb-2 text-2xl">📅</div>
+          <div className="mb-2 text-2xl text-slate-400">
+            <FontAwesomeIcon icon={faCalendarDays} />
+          </div>
           <div className="mb-1 font-semibold text-slate-700">已切换为「全部学期」总览</div>
           <div className="mx-auto max-w-md text-xs text-slate-400">
             右侧总览已展示全部历史课程。课表按单学期排列，请在右侧选择具体学期查看当学期课程表。
@@ -232,8 +236,9 @@ function CoursesRightPanel({
             </div>
           ))}
           {xnxq01id !== "all" && timetableCourseCount > 0 && timetableCourseCount > totalCourses && (
-            <div className="rounded-md bg-slate-50 border border-slate-200/70 p-2.5 text-[11px] text-slate-500 leading-relaxed">
-              💡 教务网选课共 {timetableCourseCount} 门；右栏仅列出已在「学在浙大」开通课件空间的课程。
+            <div className="rounded-md bg-slate-50 border border-slate-200/70 p-2.5 text-[11px] text-slate-500 leading-relaxed flex items-start gap-1.5">
+              <FontAwesomeIcon icon={faLightbulb} className="text-amber-500 mt-0.5 shrink-0" />
+              <span>教务网选课共 {timetableCourseCount} 门；右栏仅列出已在「学在浙大」开通课件空间的课程。</span>
             </div>
           )}
         </div>
@@ -297,7 +302,7 @@ function CourseDetailDrawer({
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
           <h3 className="font-semibold text-zju-primary">课程资料</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            ✕
+            <FontAwesomeIcon icon={faXmark} />
           </button>
         </div>
         <div className="p-4">

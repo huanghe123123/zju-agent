@@ -19,6 +19,30 @@ import {
   Progress,
   Segmented,
 } from "@crisp-ui-kit/crisp";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faClock,
+  faCalendarDays,
+  faListCheck,
+  faLocationDot,
+  faCalendarCheck,
+  faCircleCheck,
+  faChartSimple,
+  faBook,
+  faGraduationCap,
+  faFolderOpen,
+  faToolbox,
+  faSliders,
+  faSpinner,
+  faVideo,
+  faBuildingColumns,
+  faComments,
+  faCreditCard,
+  faBookOpen,
+  faBuilding,
+  faChartLine,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
 /** 学在浙大学期名 → 教务网 xnxq01id */
 function semesterToXnxq01id(name: string): string | null {
@@ -33,7 +57,7 @@ function semesterToXnxq01id(name: string): string | null {
 interface ToolItem {
   title: string;
   description: string;
-  icon: string;
+  icon: IconDefinition;
   category: "study" | "life";
   to?: string;
   extUrl?: string;
@@ -44,7 +68,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "智云课堂",
     description: "课堂回放、课件下载与语音转文字检索",
-    icon: "🎓",
+    icon: faVideo,
     category: "study",
     to: "/classroom",
     extUrl: "https://classroom.zju.edu.cn",
@@ -53,7 +77,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "学在浙大",
     description: "Canvas 平台、在线作业提交与教学通知",
-    icon: "📖",
+    icon: faGraduationCap,
     category: "study",
     extUrl: "https://courses.zju.edu.cn",
     available: true,
@@ -61,7 +85,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "本科生教务系统",
     description: "选课系统、培养方案、成绩单与考签查询",
-    icon: "🏛️",
+    icon: faBuildingColumns,
     category: "study",
     extUrl: "http://jwbinfosys.zju.edu.cn",
     available: true,
@@ -69,7 +93,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "CC98 论坛",
     description: "浙大学子专属的校内交流社区与论坛天地",
-    icon: "💬",
+    icon: faComments,
     category: "life",
     extUrl: "https://www.cc98.org",
     available: true,
@@ -77,7 +101,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "校网充值与查询",
     description: "查询校网账户状态、剩余流量与快速充值",
-    icon: "💳",
+    icon: faCreditCard,
     category: "life",
     extUrl: "https://myvpn.zju.edu.cn",
     available: true,
@@ -85,7 +109,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "图书馆座位预约",
     description: "各校区图书馆自习室座位与研修间实时预约",
-    icon: "📚",
+    icon: faBookOpen,
     category: "life",
     extUrl: "http://libsys.zju.edu.cn",
     available: true,
@@ -93,7 +117,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "校务综合服务大厅",
     description: "校车时刻表、学籍异动、用印申请与事务办理",
-    icon: "🏢",
+    icon: faBuilding,
     category: "life",
     extUrl: "https://service.zju.edu.cn",
     available: true,
@@ -101,7 +125,7 @@ const TOOLS: ToolItem[] = [
   {
     title: "ETA 成绩分析",
     description: "专业排名、成绩与 GPA 换算分析",
-    icon: "📊",
+    icon: faChartLine,
     category: "study",
     available: false,
   },
@@ -242,8 +266,8 @@ export function DashboardPage() {
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
                 {loggedIn && authStatus?.username
-                  ? `你好，${authStatus.username} 👋`
-                  : "你好，浙大学子 👋"}
+                  ? `你好，${authStatus.username}`
+                  : "你好，浙大学子"}
               </span>
               {dateInfo && (
                 <Badge tone="neutral" size="medium">
@@ -272,7 +296,7 @@ export function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <span>⏰</span>
+                <FontAwesomeIcon icon={faClock} className="text-zju-primary text-xs" />
                 <span>接下来</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">未来 48 小时内的教学日程与临近待办</p>
@@ -287,7 +311,8 @@ export function DashboardPage() {
                   value: "schedule",
                   label: (
                     <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-1">
-                      <span>📅 日程</span>
+                      <FontAwesomeIcon icon={faCalendarDays} className="text-[11px]" />
+                      <span>日程</span>
                       {allPeriods.length > 0 && (
                         <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       )}
@@ -298,7 +323,8 @@ export function DashboardPage() {
                   value: "assignments",
                   label: (
                     <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-1">
-                      <span>📝 作业</span>
+                      <FontAwesomeIcon icon={faListCheck} className="text-[11px]" />
+                      <span>作业</span>
                       {assignments48h.length > 0 && (
                         <Badge tone="warning" size="small">
                           {assignments48h.length}
@@ -315,7 +341,7 @@ export function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {scheduleLoading ? (
               <Card raised className="col-span-1 md:col-span-2 p-8 text-center text-xs text-slate-400">
-                <span className="inline-block animate-spin mr-1.5">⏳</span>
+                <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-1.5" />
                 正在同步校历与日程时空流…
               </Card>
             ) : upcomingTab === "schedule" ? (
@@ -324,13 +350,13 @@ export function DashboardPage() {
                 allPeriods.map((period) => {
                   const startMs = new Date(period.startIso).getTime();
                   const endMs = new Date(period.endIso).getTime();
-                  const isOngoing = startMs <= nowMs && nowMs < endMs;
+                  const isOngoing = nowMs >= startMs && nowMs <= endMs;
                   const liveSec = isOngoing
                     ? Math.max(0, Math.floor((endMs - nowMs) / 1000))
                     : Math.max(0, Math.floor((startMs - nowMs) / 1000));
-                  const totalDur = Math.max(1, endMs - startMs);
+                  const totalSec = Math.max(1, Math.floor((endMs - startMs) / 1000));
                   const progress = isOngoing
-                    ? Math.min(100, Math.max(0, Math.round(((nowMs - startMs) / totalDur) * 100)))
+                    ? Math.min(100, Math.max(0, Math.floor(((nowMs - startMs) / 1000 / totalSec) * 100)))
                     : 0;
 
                   return (
@@ -363,7 +389,8 @@ export function DashboardPage() {
                             </div>
                             <div className="text-xs text-slate-600 mt-1.5 flex items-center gap-2 flex-wrap">
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100/80 text-slate-700">
-                                📍 {period.location}
+                                <FontAwesomeIcon icon={faLocationDot} className="text-slate-400 text-[10px]" />
+                                <span>{period.location}</span>
                               </span>
                               {period.teacher && (
                                 <span className="text-slate-400">· {period.teacher}</span>
@@ -402,7 +429,7 @@ export function DashboardPage() {
                 <Card raised className="col-span-1 md:col-span-2 p-8 text-center">
                   <EmptyState
                     variant="default"
-                    icon={<span className="text-3xl">🎉</span>}
+                    icon={<FontAwesomeIcon icon={faCalendarCheck} className="text-3xl text-emerald-500" />}
                     title={
                       dateInfo?.weekString === "开学前夕" || dateInfo?.weekString === "假期"
                         ? `${dateInfo.weekString} · 48小时内暂无待办日程`
@@ -440,7 +467,8 @@ export function DashboardPage() {
                               dot={isUrgent}
                               size="small"
                             >
-                              ⏳ {formatHMS(liveSec)}
+                              <FontAwesomeIcon icon={faClock} className="mr-1 text-[10px]" />
+                              {formatHMS(liveSec)}
                             </Badge>
                           )}
                         </div>
@@ -463,7 +491,7 @@ export function DashboardPage() {
                 <Card raised className="col-span-1 md:col-span-2 p-8 text-center">
                   <EmptyState
                     variant="default"
-                    icon={<span className="text-3xl">🏖️</span>}
+                    icon={<FontAwesomeIcon icon={faCircleCheck} className="text-3xl text-emerald-500" />}
                     title="近 48 小时暂无紧急待交作业"
                     description="所有待办作业均在安全期内或已全部提交完毕。"
                   />
@@ -477,7 +505,7 @@ export function DashboardPage() {
         <section className="space-y-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>📊</span>
+              <FontAwesomeIcon icon={faChartSimple} className="text-zju-primary text-xs" />
               <span>学业快览</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">本学期核心学业统计与核心页面直达</p>
@@ -488,8 +516,8 @@ export function DashboardPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-slate-500">本学期课程</span>
-                    <div className="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
-                      📚
+                    <div className="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+                      <FontAwesomeIcon icon={faBook} />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
@@ -511,8 +539,8 @@ export function DashboardPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-slate-500">待办作业</span>
-                    <div className="size-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
-                      📝
+                    <div className="size-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+                      <FontAwesomeIcon icon={faListCheck} />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
@@ -539,8 +567,8 @@ export function DashboardPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-slate-500">考试安排</span>
-                    <div className="size-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
-                      📋
+                    <div className="size-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+                      <FontAwesomeIcon icon={faGraduationCap} />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
@@ -562,8 +590,8 @@ export function DashboardPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-slate-500">下载中心</span>
-                    <div className="size-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
-                      📁
+                    <div className="size-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+                      <FontAwesomeIcon icon={faFolderOpen} />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1 mt-1">
@@ -585,7 +613,7 @@ export function DashboardPage() {
         <section className="space-y-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>🧰</span>
+              <FontAwesomeIcon icon={faToolbox} className="text-zju-primary text-xs" />
               <span>校园百宝箱</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -605,8 +633,8 @@ export function DashboardPage() {
                   }`}
                 >
                   <div>
-                    <div className="size-10 rounded-xl bg-slate-100/90 text-xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:bg-blue-50 transition-all">
-                      {tool.icon}
+                    <div className="size-10 rounded-xl bg-slate-100/90 text-zju-primary text-base flex items-center justify-center mb-3 group-hover:scale-110 group-hover:bg-blue-50 transition-all">
+                      <FontAwesomeIcon icon={tool.icon} />
                     </div>
                     <div className="flex items-center justify-between mb-1">
                       <h3 className="font-semibold text-sm text-slate-900 group-hover:text-zju-primary transition-colors">
@@ -668,7 +696,7 @@ export function DashboardPage() {
         <section className="space-y-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>⚙️</span>
+              <FontAwesomeIcon icon={faSliders} className="text-zju-primary text-xs" />
               <span>系统与连接状态</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">账号认证凭据与推理大模型连接检测</p>

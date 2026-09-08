@@ -7,6 +7,22 @@ import { useToken } from "../api/bootstrap.js";
 import { formatBytes, formatDateTime } from "../utils/format.js";
 import type { DownloadRecord } from "../api/zju.js";
 import { Badge, Button, Card, EmptyState } from "@crisp-ui-kit/crisp";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faFolderOpen,
+  faXmark,
+  faFilePdf,
+  faFileWord,
+  faFilePowerpoint,
+  faFileExcel,
+  faFileImage,
+  faFileVideo,
+  faFileAudio,
+  faFileZipper,
+  faFileLines,
+  faFile,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
 type PreviewState =
   | { type: "none" }
@@ -107,7 +123,7 @@ export function DownloadsPage() {
         <Card raised className="p-8 text-center">
           <EmptyState
             variant="default"
-            icon={<span className="text-3xl">📁</span>}
+            icon={<FontAwesomeIcon icon={faFolderOpen} className="text-3xl text-slate-300" />}
             title="还没有下载过文件"
             description="前往「课程」页下载课件后会出现在这里。"
           />
@@ -147,32 +163,22 @@ function DownloadRow({
   onDelete: (purge: boolean) => void;
   deleting: boolean;
 }) {
-  const token = useToken();
-  const kind = previewKind(record);
-  const canPreview = kind !== "unsupported";
-  const [confirming, setConfirming] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const token = useToken();
+  const canPreview = previewKind(record) !== "unsupported";
+  const iconInfo = fileIconInfo(record.fileName);
 
-  /** 下载走 fetch→blob（Authorization 头），token 不进 URL/历史记录 */
   async function downloadFile() {
-    if (downloading) return;
-    setDownloading(true);
     try {
-      const res = await fetch(`/api/files/downloads/${record.id}/preview`, {
-        headers: { Authorization: `Bearer ${token ?? ""}` },
-      });
-      if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      setDownloading(true);
+      const url = downloadPreviewUrl(record.id, false, token);
       const a = document.createElement("a");
       a.href = url;
       a.download = record.fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : "下载失败");
     } finally {
       setDownloading(false);
     }
@@ -187,7 +193,9 @@ function DownloadRow({
       }`}
     >
       <div className="flex items-center gap-3">
-        <div className="shrink-0 text-2xl">{fileIcon(record.fileName)}</div>
+        <div className={`shrink-0 text-xl ${iconInfo.color}`}>
+          <FontAwesomeIcon icon={iconInfo.icon} />
+        </div>
         <div className="min-w-0 flex-1">
           <button
             onClick={onPreview}
@@ -253,7 +261,7 @@ function DownloadRow({
                 onClick={() => setConfirming(false)}
                 className="text-xs"
               >
-                ✕
+                <FontAwesomeIcon icon={faXmark} className="text-xs" />
               </Button>
             </span>
           ) : (
@@ -286,7 +294,9 @@ function PreviewDrawer({
       <div className="relative flex h-full w-full max-w-3xl flex-col bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <h3 className="font-semibold text-zju-primary">预览</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <FontAwesomeIcon icon={faXmark} />
+          </button>
         </div>
         <div className="flex-1 overflow-auto bg-slate-50 p-4">
           {state.type === "loading" && (
@@ -299,7 +309,9 @@ function PreviewDrawer({
           )}
           {state.type === "unsupported" && (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-              <div className="text-4xl">📄</div>
+              <div className="text-4xl text-slate-400">
+                <FontAwesomeIcon icon={faFileLines} />
+              </div>
               <div className="text-sm text-slate-600">{state.fileName}</div>
               <div className="text-xs text-slate-400">
                 此类型文件无法在浏览器内预览{state.mime ? `（${state.mime}）` : ""}，请点击「下载」用本地软件打开。
@@ -321,16 +333,16 @@ function PreviewDrawer({
   );
 }
 
-function fileIcon(name: string): string {
+function fileIconInfo(name: string): { icon: IconDefinition; color: string } {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  if (["pdf"].includes(ext)) return "📕";
-  if (["doc", "docx"].includes(ext)) return "📘";
-  if (["ppt", "pptx"].includes(ext)) return "📙";
-  if (["xls", "xlsx"].includes(ext)) return "📗";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "🖼️";
-  if (["mp4", "mov", "avi"].includes(ext)) return "🎬";
-  if (["mp3", "wav"].includes(ext)) return "🎵";
-  if (["zip", "rar", "7z"].includes(ext)) return "🗜️";
-  if (["txt", "md", "json"].includes(ext)) return "📄";
-  return "📦";
+  if (["pdf"].includes(ext)) return { icon: faFilePdf, color: "text-rose-600" };
+  if (["doc", "docx"].includes(ext)) return { icon: faFileWord, color: "text-blue-600" };
+  if (["ppt", "pptx"].includes(ext)) return { icon: faFilePowerpoint, color: "text-amber-600" };
+  if (["xls", "xlsx"].includes(ext)) return { icon: faFileExcel, color: "text-emerald-600" };
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return { icon: faFileImage, color: "text-purple-600" };
+  if (["mp4", "mov", "avi"].includes(ext)) return { icon: faFileVideo, color: "text-indigo-600" };
+  if (["mp3", "wav"].includes(ext)) return { icon: faFileAudio, color: "text-pink-600" };
+  if (["zip", "rar", "7z"].includes(ext)) return { icon: faFileZipper, color: "text-amber-700" };
+  if (["txt", "md", "json"].includes(ext)) return { icon: faFileLines, color: "text-slate-600" };
+  return { icon: faFile, color: "text-slate-500" };
 }

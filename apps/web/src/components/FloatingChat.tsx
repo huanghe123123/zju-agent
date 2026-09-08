@@ -12,6 +12,28 @@ import {
   type AgentEvent,
   type ChatMessage,
 } from "../api/agent.js";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faCommentDots,
+  faComments,
+  faRobot,
+  faCheck,
+  faXmark,
+  faSpinner,
+  faTriangleExclamation,
+  faPlus,
+  faMinus,
+  faExpand,
+  faCompress,
+  faTrashCan,
+  faChevronDown,
+  faGripVertical,
+  faCalendarDays,
+  faListCheck,
+  faGraduationCap,
+  faBookOpen,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 
 type PendingConfirmation = {
   confirmationId: string;
@@ -38,11 +60,11 @@ function initialLive(): LiveState {
   return { assistantText: "", toolSteps: [], thinking: false };
 }
 
-const QUICK_PROMPTS = [
-  "📅 今天有什么课？",
-  "📝 最近有什么作业要交？",
-  "📋 查一下这学期的考试安排",
-  "📚 总结一下本学期的所有课程",
+const QUICK_PROMPTS: { label: string; prompt: string; icon: IconDefinition }[] = [
+  { label: "今天有什么课？", prompt: "今天有什么课？请列出上课时间和地点。", icon: faCalendarDays },
+  { label: "最近有什么作业要交？", prompt: "最近有什么作业要交？请按截止时间排序。", icon: faListCheck },
+  { label: "查一下这学期的考试安排", prompt: "查一下这学期的考试安排和考场地点。", icon: faGraduationCap },
+  { label: "总结本学期的所有课程", prompt: "总结一下我本学期的所有课程和学分情况。", icon: faBookOpen },
 ];
 
 export function FloatingChat() {
@@ -149,7 +171,7 @@ export function FloatingChat() {
           className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 flex items-center gap-2 rounded-full bg-zju-primary px-4 py-3 text-white shadow-xl hover:bg-zju-light hover:shadow-2xl active:scale-95 transition-all duration-200 group"
           title="打开 AI 校园助手 (⌘K)"
         >
-          <span className="text-xl">💬</span>
+          <FontAwesomeIcon icon={faCommentDots} className="text-base" />
           <span className="text-sm font-semibold tracking-wide">AI 助手</span>
           <kbd className="hidden sm:inline-block rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-mono text-white/90">
             ⌘K
@@ -187,17 +209,15 @@ export function FloatingChat() {
           >
             {/* 左侧：拖拽指示器与标题 */}
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-slate-400 text-sm font-bold tracking-tighter" title="拖拽移动浮窗">
-                ⋮⋮
-              </span>
-              <span className="text-base">💬</span>
+              <FontAwesomeIcon icon={faGripVertical} className="text-slate-400 text-xs" title="拖拽移动浮窗" />
+              <FontAwesomeIcon icon={faComments} className="text-sm text-zju-primary" />
               <div className="relative">
                 <button
                   onClick={() => setShowConvDropdown((v) => !v)}
-                  className="flex items-center gap-1 text-sm font-semibold text-slate-800 hover:text-zju-primary transition truncate max-w-[180px]"
+                  className="flex items-center gap-1.5 text-sm font-semibold text-slate-800 hover:text-zju-primary transition truncate max-w-[180px]"
                 >
                   <span className="truncate">{activeConv?.title || "新对话"}</span>
-                  <span className="text-[10px] text-slate-400">▾</span>
+                  <FontAwesomeIcon icon={faChevronDown} className="text-[9px] text-slate-400" />
                 </button>
 
                 {/* 会话下拉切换菜单 */}
@@ -210,7 +230,7 @@ export function FloatingChat() {
                       }}
                       className="flex w-full items-center gap-1.5 rounded-lg bg-zju-primary/10 px-2.5 py-1.5 text-xs font-semibold text-zju-primary hover:bg-zju-primary/20 transition mb-1"
                     >
-                      <span>+</span>
+                      <FontAwesomeIcon icon={faPlus} className="text-xs" />
                       <span>开启新对话</span>
                     </button>
                     <div className="max-h-48 overflow-y-auto space-y-0.5">
@@ -242,7 +262,7 @@ export function FloatingChat() {
                             className="hidden text-slate-400 hover:text-rose-500 group-hover:block px-1"
                             title="删除会话"
                           >
-                            ✕
+                            <FontAwesomeIcon icon={faTrashCan} className="text-[11px]" />
                           </button>
                         </div>
                       ))}
@@ -265,28 +285,28 @@ export function FloatingChat() {
                 className="size-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/60 hover:text-slate-700 transition"
                 title="开启新对话"
               >
-                +
+                <FontAwesomeIcon icon={faPlus} className="text-xs" />
               </button>
               <button
                 onClick={toggleExpand}
                 className="size-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/60 hover:text-slate-700 transition text-xs"
                 title={isExpanded ? "收起窗口" : "展开窗口"}
               >
-                {isExpanded ? "⤡" : "⤢"}
+                <FontAwesomeIcon icon={isExpanded ? faCompress : faExpand} className="text-xs" />
               </button>
               <button
                 onClick={minimizeChat}
-                className="size-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/60 hover:text-slate-700 transition text-xs font-bold"
+                className="size-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/60 hover:text-slate-700 transition text-xs"
                 title="最小化"
               >
-                —
+                <FontAwesomeIcon icon={faMinus} className="text-xs" />
               </button>
               <button
                 onClick={closeChat}
-                className="size-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition text-xs font-bold"
+                className="size-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition text-xs"
                 title="关闭浮窗"
               >
-                ✕
+                <FontAwesomeIcon icon={faXmark} className="text-xs" />
               </button>
             </div>
           </div>
@@ -579,8 +599,8 @@ function NewConversationContent({
   return (
     <div className="flex h-full flex-col min-h-0">
       <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col justify-center items-center text-center">
-        <div className="size-12 rounded-2xl bg-zju-primary/10 flex items-center justify-center text-2xl mb-1">
-          🤖
+        <div className="size-12 rounded-2xl bg-zju-primary/10 flex items-center justify-center mb-1">
+          <FontAwesomeIcon icon={faRobot} className="text-2xl text-zju-primary" />
         </div>
         <h3 className="font-semibold text-slate-800 text-sm">浙大校园智能助手</h3>
         <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
@@ -589,14 +609,15 @@ function NewConversationContent({
 
         {/* 快捷提问气泡 */}
         <div className="w-full pt-3 space-y-1.5">
-          {QUICK_PROMPTS.map((prompt) => (
+          {QUICK_PROMPTS.map((item) => (
             <button
-              key={prompt}
-              onClick={() => onSend(prompt.slice(2).trim())}
+              key={item.label}
+              onClick={() => onSend(item.prompt)}
               disabled={send.isPending}
-              className="w-full text-left rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs text-slate-700 hover:border-zju-primary hover:text-zju-primary hover:bg-slate-50/80 transition shadow-2xs"
+              className="w-full text-left rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs text-slate-700 hover:border-zju-primary hover:text-zju-primary hover:bg-slate-50/80 transition shadow-2xs flex items-center gap-2 group"
             >
-              {prompt}
+              <FontAwesomeIcon icon={item.icon} className="text-slate-400 group-hover:text-zju-primary text-xs shrink-0" />
+              <span>{item.label}</span>
             </button>
           ))}
         </div>
@@ -641,18 +662,19 @@ function LiveBubble({ state }: { state: LiveState }) {
 }
 
 function ToolStepView({ step }: { step: ToolStep }) {
-  const icon = step.status === "done" ? "✓" : step.status === "failed" ? "✕" : "⋯";
-  const color =
-    step.status === "done"
-      ? "text-emerald-600"
-      : step.status === "failed"
-        ? "text-rose-500"
-        : "text-slate-400";
+  const icon =
+    step.status === "done" ? (
+      <FontAwesomeIcon icon={faCheck} className="text-emerald-600 text-xs" />
+    ) : step.status === "failed" ? (
+      <FontAwesomeIcon icon={faXmark} className="text-rose-500 text-xs" />
+    ) : (
+      <FontAwesomeIcon icon={faSpinner} className="animate-spin text-slate-400 text-xs" />
+    );
   const label = toolLabel(step.name);
   return (
     <div className="rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-1.5 text-xs shadow-2xs">
       <div className="flex items-center gap-1.5">
-        <span className={`${color} font-bold`}>{icon}</span>
+        <span>{icon}</span>
         <span className="font-medium text-slate-700">{label}</span>
       </div>
       {step.result != null && (
@@ -685,8 +707,9 @@ function HistoryBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="mb-2 space-y-1">
         {calls.map((c) => (
-          <div key={c.id} className="rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-1 text-xs text-slate-600">
-            <span className="text-emerald-600 font-bold">✓</span> {toolLabel(c.name)}
+          <div key={c.id} className="rounded-lg border border-slate-100 bg-slate-50/80 px-2.5 py-1 text-xs text-slate-600 flex items-center gap-1.5">
+            <FontAwesomeIcon icon={faCheck} className="text-emerald-600 text-[11px]" />
+            <span>{toolLabel(c.name)}</span>
           </div>
         ))}
       </div>
@@ -798,8 +821,10 @@ function ConfirmBar({
 }) {
   return (
     <div className="border-t border-amber-200 bg-amber-50 p-2.5 rounded-b-2xl text-xs">
-      <div className="mb-1 text-amber-800 font-medium">
-        🔔 执行确认：<span className="font-mono">{toolLabel(pending.toolName)}</span>
+      <div className="mb-1 text-amber-800 font-medium flex items-center gap-1.5">
+        <FontAwesomeIcon icon={faTriangleExclamation} className="text-amber-500 text-xs" />
+        <span>执行确认：</span>
+        <span className="font-mono">{toolLabel(pending.toolName)}</span>
       </div>
       <div className="mb-2 rounded bg-white/80 p-1.5 font-mono text-[10px] text-slate-600 truncate">
         {pending.summary}

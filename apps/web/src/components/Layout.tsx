@@ -1,13 +1,25 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faHouse,
+  faBookOpen,
+  faListCheck,
+  faGraduationCap,
+  faFolderOpen,
+  faGear,
+  faChartSimple,
+  faXmark,
+} from "@fortawesome/free-solid-svg-icons";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import { FloatingChat } from "./FloatingChat.js";
 import { useFloatingChatStore } from "../stores/useFloatingChat.js";
 
-const NAV_ITEMS: { to: string; label: string; icon: string; end?: boolean }[] = [
-  { to: "/", label: "工作台", icon: "🏠", end: true },
-  { to: "/courses", label: "课程表", icon: "📚" },
-  { to: "/assignments", label: "待办作业", icon: "📝" },
-  { to: "/exams", label: "考试安排", icon: "📋" },
+const NAV_ITEMS: { to: string; label: string; icon: IconDefinition; end?: boolean }[] = [
+  { to: "/", label: "工作台", icon: faHouse, end: true },
+  { to: "/courses", label: "课程表", icon: faBookOpen },
+  { to: "/assignments", label: "待办作业", icon: faListCheck },
+  { to: "/exams", label: "考试安排", icon: faGraduationCap },
 ];
 
 export function Layout({
@@ -67,7 +79,7 @@ export function Layout({
                 }`
               }
             >
-              <span className="text-sm">{item.icon}</span>
+              <FontAwesomeIcon icon={item.icon} className="text-sm w-4 text-center" />
               <span>{item.label}</span>
             </NavLink>
           ))}
@@ -84,7 +96,7 @@ export function Layout({
               }`
             }
           >
-            <span>📁</span>
+            <FontAwesomeIcon icon={faFolderOpen} className="text-xs" />
             <span>下载</span>
           </NavLink>
           <NavLink
@@ -97,7 +109,7 @@ export function Layout({
               }`
             }
           >
-            <span>⚙️</span>
+            <FontAwesomeIcon icon={faGear} className="text-xs" />
             <span>设置</span>
           </NavLink>
         </div>
@@ -122,7 +134,7 @@ export function Layout({
             onClick={() => setMobileRightOpen((v) => !v)}
             className="fixed bottom-16 right-3 z-30 flex size-10 items-center justify-center rounded-full bg-zju-primary text-white shadow-lg lg:hidden"
           >
-            {mobileRightOpen ? "✕" : "📊"}
+            <FontAwesomeIcon icon={mobileRightOpen ? faXmark : faChartSimple} />
           </button>
           {mobileRightOpen && (
             <div className="fixed inset-0 z-40 lg:hidden">
@@ -137,7 +149,7 @@ export function Layout({
                     onClick={() => setMobileRightOpen(false)}
                     className="text-slate-400 hover:text-slate-600"
                   >
-                    ✕
+                    <FontAwesomeIcon icon={faXmark} />
                   </button>
                 </div>
                 {rightPanel}
@@ -162,7 +174,7 @@ export function Layout({
               }`
             }
           >
-            <span className="text-base">{item.icon}</span>
+            <FontAwesomeIcon icon={item.icon} className="text-sm" />
             <span>{item.label}</span>
           </NavLink>
         ))}
@@ -177,7 +189,7 @@ export function Layout({
             }`
           }
         >
-          <span className="text-base">📁</span>
+          <FontAwesomeIcon icon={faFolderOpen} className="text-sm" />
           <span>下载</span>
         </NavLink>
         <NavLink
@@ -190,7 +202,7 @@ export function Layout({
             }`
           }
         >
-          <span className="text-base">⚙️</span>
+          <FontAwesomeIcon icon={faGear} className="text-sm" />
           <span>设置</span>
         </NavLink>
       </nav>
