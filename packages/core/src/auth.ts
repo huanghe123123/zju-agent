@@ -51,7 +51,5 @@ export type CredentialStatus = {
 };
 
 export function maskUsername(username: string): string {
-  if (!username) return "";
-  if (username.length <= 4) return username[0] + "***";
-  return username.slice(0, 2) + "***" + username.slice(-2);
+  return username ?? "";
 }

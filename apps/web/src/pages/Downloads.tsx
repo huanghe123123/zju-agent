@@ -6,6 +6,7 @@ import { useDownloads, useDeleteDownload, downloadPreviewUrl } from "../api/zju.
 import { useToken } from "../api/bootstrap.js";
 import { formatBytes, formatDateTime } from "../utils/format.js";
 import type { DownloadRecord } from "../api/zju.js";
+import { Badge, Button, Card, EmptyState } from "@crisp-ui-kit/crisp";
 
 type PreviewState =
   | { type: "none" }
@@ -80,20 +81,22 @@ export function DownloadsPage() {
 
   return (
     <Layout>
-      <div className="mb-4 flex items-baseline justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zju-primary">下载</h1>
           {data?.downloadDir && (
             <div className="mt-1 text-xs text-slate-400">存储目录：{data.downloadDir}</div>
           )}
         </div>
-        <button
+        <Button
+          intent="neutral"
+          size="sm"
           onClick={() => refetch()}
-          disabled={isFetching}
-          className="text-sm text-slate-500 hover:text-zju-primary disabled:opacity-50"
+          loading={isFetching}
+          className="text-xs"
         >
           {isFetching ? "刷新中…" : "刷新"}
-        </button>
+        </Button>
       </div>
 
       {error ? (
@@ -101,11 +104,16 @@ export function DownloadsPage() {
       ) : isLoading ? (
         <Loading />
       ) : records.length === 0 ? (
-        <div className="rounded-md border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-          还没有下载过文件。前往「课程」页下载课件后会出现在这里。
-        </div>
+        <Card raised className="p-8 text-center">
+          <EmptyState
+            variant="default"
+            icon={<span className="text-3xl">📁</span>}
+            title="还没有下载过文件"
+            description="前往「课程」页下载课件后会出现在这里。"
+          />
+        </Card>
       ) : (
-        <ul className="space-y-2">
+        <div className="space-y-2.5">
           {records.map((r) => (
             <DownloadRow
               key={r.id}
@@ -116,7 +124,7 @@ export function DownloadsPage() {
               deleting={del.isPending}
             />
           ))}
-        </ul>
+        </div>
       )}
 
       {preview.type !== "none" && (
@@ -171,9 +179,11 @@ function DownloadRow({
   }
 
   return (
-    <li
-      className={`rounded-lg border bg-white p-3 shadow-sm transition ${
-        selected ? "border-zju-primary ring-1 ring-zju-primary" : "border-slate-200"
+    <Card
+      raised
+      interactive
+      className={`p-3.5 transition-all duration-150 ${
+        selected ? "border-zju-primary ring-1 ring-zju-primary" : ""
       }`}
     >
       <div className="flex items-center gap-3">
@@ -181,7 +191,7 @@ function DownloadRow({
         <div className="min-w-0 flex-1">
           <button
             onClick={onPreview}
-            className="block w-full truncate text-left text-sm font-medium text-slate-800 hover:text-zju-primary"
+            className="block w-full truncate text-left text-sm font-semibold text-slate-800 hover:text-zju-primary cursor-pointer"
             title={record.fileName}
           >
             {record.fileName}
@@ -191,61 +201,75 @@ function DownloadRow({
             <span>·</span>
             <span>{formatDateTime(record.createdAt)}</span>
             {record.source === "classroom" && (
-              <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">智云</span>
+              <Badge tone="neutral" size="small">
+                智云
+              </Badge>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           {canPreview && (
-            <button
+            <Button
+              intent="ghost"
+              size="sm"
               onClick={onPreview}
-              className="rounded px-2 py-1 text-xs text-zju-primary hover:bg-slate-100"
+              className="text-xs text-zju-primary font-medium"
             >
               预览
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            intent="neutral"
+            size="sm"
             onClick={() => void downloadFile()}
-            disabled={downloading}
-            className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+            loading={downloading}
+            className="text-xs text-slate-700"
           >
-            {downloading ? "下载中…" : "下载"}
-          </button>
+            下载
+          </Button>
           {confirming ? (
             <span className="flex items-center gap-1 text-xs">
-              <button
+              <Button
+                intent="danger"
+                size="sm"
                 onClick={() => { onDelete(true); setConfirming(false); }}
                 disabled={deleting}
-                className="rounded bg-rose-600 px-2 py-1 text-white hover:bg-rose-700 disabled:opacity-50"
+                className="text-xs"
               >
                 删文件
-              </button>
-              <button
+              </Button>
+              <Button
+                intent="neutral"
+                size="sm"
                 onClick={() => { onDelete(false); setConfirming(false); }}
                 disabled={deleting}
-                className="rounded border border-slate-300 px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                className="text-xs"
               >
                 仅删记录
-              </button>
-              <button
+              </Button>
+              <Button
+                intent="ghost"
+                size="sm"
                 onClick={() => setConfirming(false)}
-                className="rounded px-1 text-slate-400 hover:text-slate-600"
+                className="text-xs"
               >
                 ✕
-              </button>
+              </Button>
             </span>
           ) : (
-            <button
+            <Button
+              intent="ghost"
+              size="sm"
               onClick={() => setConfirming(true)}
               disabled={deleting}
-              className="rounded px-2 py-1 text-xs text-rose-500 hover:bg-rose-50 disabled:opacity-50"
+              className="text-xs text-slate-400 hover:text-rose-600"
             >
               删除
-            </button>
+            </Button>
           )}
         </div>
       </div>
-    </li>
+    </Card>
   );
 }
 

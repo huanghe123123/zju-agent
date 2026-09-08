@@ -147,10 +147,13 @@ export function FloatingChat() {
         <button
           onClick={isOpen && isMinimized ? restoreChat : toggleChat}
           className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 flex items-center gap-2 rounded-full bg-zju-primary px-4 py-3 text-white shadow-xl hover:bg-zju-light hover:shadow-2xl active:scale-95 transition-all duration-200 group"
-          title="打开 AI 校园助手"
+          title="打开 AI 校园助手 (⌘K)"
         >
           <span className="text-xl">💬</span>
           <span className="text-sm font-semibold tracking-wide">AI 助手</span>
+          <kbd className="hidden sm:inline-block rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-mono text-white/90">
+            ⌘K
+          </kbd>
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>

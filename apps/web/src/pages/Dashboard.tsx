@@ -12,7 +12,13 @@ import {
   useTimetable,
   useUpcomingSchedule48h,
 } from "../api/zju.js";
-import { useFloatingChatStore } from "../stores/useFloatingChat.js";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  Progress,
+  Segmented,
+} from "@crisp-ui-kit/crisp";
 
 /** 学在浙大学期名 → 教务网 xnxq01id */
 function semesterToXnxq01id(name: string): string | null {
@@ -101,14 +107,6 @@ const TOOLS: ToolItem[] = [
   },
 ];
 
-const AI_SHORTCUTS = [
-  { label: "📅 今天有什么课？", prompt: "今天有什么课？请列出上课时间和地点。" },
-  { label: "📝 最近有什么作业要交？", prompt: "最近有什么作业要交？请按截止时间排序。" },
-  { label: "📋 查一下这学期的考试安排", prompt: "查一下这学期的考试安排和考场地点。" },
-  { label: "📚 总结本学期所有课程", prompt: "总结一下我本学期的所有课程和学分情况。" },
-  { label: "💳 如何查询和充值校网？", prompt: "告诉我如何查询校网状态和充值校网。" },
-];
-
 export function DashboardPage() {
   const apiFetch = useApiFetch();
   const { data: authStatus, isLoading: authLoading } = useAuthStatus();
@@ -117,7 +115,6 @@ export function DashboardPage() {
   const { data: assignments, isLoading: assignmentsLoading } = useAllAssignments();
   const { data: exams, isLoading: examsLoading } = useExams();
   const { data: upcomingData, isLoading: scheduleLoading } = useUpcomingSchedule48h();
-  const { openChat } = useFloatingChatStore();
 
   const loggedIn = authStatus?.ok ?? false;
   const dateInfo = upcomingData?.dateInfo;
@@ -239,100 +236,88 @@ export function DashboardPage() {
   return (
     <Layout>
       <div className="max-w-6xl mx-auto space-y-6 pb-12">
-        {/* === 顶部欢迎条 === */}
-        <div className="rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-zju-primary p-6 text-white shadow-md relative overflow-hidden">
-          <div className="absolute right-0 top-0 -mt-8 -mr-8 size-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span className="text-xl sm:text-2xl font-bold tracking-tight">
-                  {loggedIn && authStatus?.username
-                    ? `你好，${authStatus.username} 👋`
-                    : "你好，浙大学子 👋"}
-                </span>
-                {dateInfo && (
-                  <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium backdrop-blur-sm">
-                    {dateInfo.academicYear}学年 {dateInfo.term} · {dateInfo.weekString}
-                  </span>
-                )}
-                {dateInfo?.isHoliday && (
-                  <span className="rounded-full bg-amber-400 text-amber-950 px-2 py-0.5 text-xs font-bold">
-                    休：{dateInfo.holidayName ?? "放假"}
-                  </span>
-                )}
-                {dateInfo?.isMakeupDay && (
-                  <span className="rounded-full bg-purple-300 text-purple-950 px-2 py-0.5 text-xs font-bold">
-                    调：{dateInfo.holidayName}
-                  </span>
-                )}
-              </div>
-              <p className="text-blue-100 text-xs sm:text-sm max-w-xl">
-                欢迎来到浙大校园助手。已聚合本学期课程、48小时日程时空流与百宝箱工具，随时可向右下角 AI 助手提问。
-              </p>
+        {/* === 顶部工作台概览 (Crisp Workspace Header) === */}
+        <Card raised className="p-4 sm:p-5 bg-white border border-slate-200/80">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+                {loggedIn && authStatus?.username
+                  ? `你好，${authStatus.username} 👋`
+                  : "你好，浙大学子 👋"}
+              </span>
+              {dateInfo && (
+                <Badge tone="neutral" size="medium">
+                  {dateInfo.academicYear}学年 {dateInfo.term} · {dateInfo.weekString}
+                </Badge>
+              )}
+              {dateInfo?.isHoliday && (
+                <Badge tone="warning" size="medium" dot>
+                  休：{dateInfo.holidayName ?? "放假"}
+                </Badge>
+              )}
+              {dateInfo?.isMakeupDay && (
+                <Badge tone="brand" size="medium" dot>
+                  调：{dateInfo.holidayName}
+                </Badge>
+              )}
             </div>
-
-            <div className="shrink-0 flex items-center gap-2.5">
-              <button
-                onClick={() => openChat()}
-                className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-zju-primary shadow-sm hover:bg-blue-50 active:scale-95 transition cursor-pointer"
-              >
-                <span className="text-base">💬</span>
-                <span>呼叫 AI 助手</span>
-              </button>
-            </div>
+            <Badge tone="success" size="small" dot>
+              教务已同步
+            </Badge>
           </div>
-        </div>
+        </Card>
 
         {/* === 第一行：接下来（按键切换：日程 / 作业） === */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-              <span>⏰</span>
-              <span>接下来</span>
-            </h2>
-
-            {/* 日程 / 作业 切换器 */}
-            <div className="inline-flex items-center rounded-lg bg-slate-100 p-1 border border-slate-200/60">
-              <button
-                type="button"
-                onClick={() => setUpcomingTab("schedule")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs transition cursor-pointer ${
-                  upcomingTab === "schedule"
-                    ? "bg-white text-zju-primary shadow-2xs font-bold"
-                    : "text-slate-600 hover:text-slate-900 font-medium"
-                }`}
-              >
-                <span>📅 日程</span>
-                {allPeriods.length > 0 && (
-                  <span className="size-1.5 rounded-full bg-emerald-500" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setUpcomingTab("assignments")}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs transition cursor-pointer ${
-                  upcomingTab === "assignments"
-                    ? "bg-white text-zju-primary shadow-2xs font-bold"
-                    : "text-slate-600 hover:text-slate-900 font-medium"
-                }`}
-              >
-                <span>📝 作业</span>
-                {assignments48h.length > 0 && (
-                  <span className="rounded-full bg-amber-200/80 text-amber-900 px-1.5 py-0.2 text-[10px] font-bold">
-                    {assignments48h.length}
-                  </span>
-                )}
-              </button>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>⏰</span>
+                <span>接下来</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">未来 48 小时内的教学日程与临近待办</p>
             </div>
+
+            {/* Crisp Segmented 切换器 */}
+            <Segmented
+              value={upcomingTab}
+              onValueChange={(val) => setUpcomingTab(val as "schedule" | "assignments")}
+              options={[
+                {
+                  value: "schedule",
+                  label: (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-1">
+                      <span>📅 日程</span>
+                      {allPeriods.length > 0 && (
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      )}
+                    </span>
+                  ),
+                },
+                {
+                  value: "assignments",
+                  label: (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-1">
+                      <span>📝 作业</span>
+                      {assignments48h.length > 0 && (
+                        <Badge tone="warning" size="small">
+                          {assignments48h.length}
+                        </Badge>
+                      )}
+                    </span>
+                  ),
+                },
+              ]}
+            />
           </div>
 
           {/* 内容网格：电脑端一排两个，手机端一排一个 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {scheduleLoading ? (
-              <div className="col-span-1 md:col-span-2 rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-400">
+              <Card raised className="col-span-1 md:col-span-2 p-8 text-center text-xs text-slate-400">
                 <span className="inline-block animate-spin mr-1.5">⏳</span>
                 正在同步校历与日程时空流…
-              </div>
+              </Card>
             ) : upcomingTab === "schedule" ? (
               /* --- 日程列表 --- */
               allPeriods.length > 0 ? (
@@ -349,52 +334,49 @@ export function DashboardPage() {
                     : 0;
 
                   return (
-                    <div
+                    <Card
                       key={period.id}
-                      className={`rounded-xl border p-4 shadow-2xs flex flex-col justify-between transition ${
-                        isOngoing
-                          ? "border-emerald-200 bg-emerald-50/40"
-                          : "border-slate-200 bg-white"
+                      raised
+                      interactive
+                      className={`p-4 flex flex-col justify-between transition-all duration-150 ${
+                        isOngoing ? "border-emerald-400/80 bg-emerald-50/20 ring-1 ring-emerald-400/30" : ""
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold ${
-                              isOngoing ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
-                            }`}
+                        <div className="flex items-center justify-between mb-2.5">
+                          <Badge
+                            tone={isOngoing ? "success" : "brand"}
+                            dot
+                            size="small"
                           >
-                            <span
-                              className={`size-1.5 rounded-full ${
-                                isOngoing ? "bg-emerald-500 animate-pulse" : "bg-blue-500"
-                              }`}
-                            />
                             {isOngoing ? "正在进行" : "即将开始"}
-                          </span>
-                          <span className="text-xs font-medium text-slate-500">
+                          </Badge>
+                          <span className="text-xs font-medium text-slate-400 bg-slate-100/80 px-2 py-0.5 rounded-md">
                             {period.friendlyTimeStr}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <div className="text-base font-bold text-slate-900 truncate">
+                            <div className="text-base font-bold text-slate-900 truncate tracking-tight">
                               {period.title}
                             </div>
-                            <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
-                              <span>📍 {period.location}</span>
+                            <div className="text-xs text-slate-600 mt-1.5 flex items-center gap-2 flex-wrap">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100/80 text-slate-700">
+                                📍 {period.location}
+                              </span>
                               {period.teacher && (
                                 <span className="text-slate-400">· {period.teacher}</span>
                               )}
                             </div>
                           </div>
 
-                          <div className="text-right shrink-0">
+                          <div className="text-right shrink-0 bg-slate-50/80 px-2.5 py-1.5 rounded-lg border border-slate-100">
                             <div className="text-[10px] text-slate-400 font-medium">
                               {isOngoing ? "距离下课" : "倒计时"}
                             </div>
                             <div
-                              className={`text-lg font-mono font-bold ${
+                              className={`text-base font-mono font-bold ${
                                 isOngoing ? "text-emerald-700" : "text-zju-primary"
                               }`}
                             >
@@ -405,28 +387,30 @@ export function DashboardPage() {
                       </div>
 
                       {isOngoing && (
-                        <div className="h-1.5 w-full rounded-full bg-emerald-200/60 overflow-hidden mt-3">
-                          <div
-                            className="h-full bg-emerald-600 rounded-full transition-all duration-1000"
-                            style={{ width: `${progress}%` }}
-                          />
+                        <div className="mt-3 pt-2 border-t border-emerald-100/60">
+                          <div className="flex justify-between text-[10px] text-emerald-700 mb-1 font-medium">
+                            <span>上课进度</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <Progress value={progress} />
                         </div>
                       )}
-                    </div>
+                    </Card>
                   );
                 })
               ) : (
-                <div className="col-span-1 md:col-span-2 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/40 via-indigo-50/20 to-white p-6 text-center space-y-2">
-                  <div className="text-3xl">🎉</div>
-                  <div className="text-sm font-bold text-slate-800">
-                    {dateInfo?.weekString === "开学前夕" || dateInfo?.weekString === "假期"
-                      ? `${dateInfo.weekString} · 48小时内暂无待办日程`
-                      : "48 小时内暂无待办日程"}
-                  </div>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    {dateInfo?.academicYear}学年 {dateInfo?.term}（{dateInfo?.weekString ?? "今日"}）未来 48 小时内暂无课程或考试安排。
-                  </p>
-                </div>
+                <Card raised className="col-span-1 md:col-span-2 p-8 text-center">
+                  <EmptyState
+                    variant="default"
+                    icon={<span className="text-3xl">🎉</span>}
+                    title={
+                      dateInfo?.weekString === "开学前夕" || dateInfo?.weekString === "假期"
+                        ? `${dateInfo.weekString} · 48小时内暂无待办日程`
+                        : "48 小时内暂无待办日程"
+                    }
+                    description={`${dateInfo?.academicYear ?? ""}学年 ${dateInfo?.term ?? ""}（${dateInfo?.weekString ?? "今日"}）未来 48 小时内暂无课程或考试安排。`}
+                  />
+                </Card>
               )
             ) : (
               /* --- 作业列表 --- */
@@ -437,25 +421,27 @@ export function DashboardPage() {
                   const liveSec = dueMs > 0 ? Math.max(0, Math.floor((dueMs - nowMs) / 1000)) : 0;
 
                   return (
-                    <div
+                    <Card
                       key={a.id}
-                      className={`rounded-xl border p-4 shadow-2xs flex flex-col justify-between transition ${
-                        isUrgent ? "border-amber-200 bg-amber-50/30" : "border-slate-200 bg-white"
+                      raised
+                      interactive
+                      className={`p-4 flex flex-col justify-between transition-all duration-150 ${
+                        isUrgent ? "border-amber-400/80 bg-amber-50/20 ring-1 ring-amber-400/30" : ""
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700 font-medium truncate max-w-[180px]">
-                            {a.courseName}
-                          </span>
+                          <Badge tone="neutral" size="small">
+                            <span className="truncate max-w-[180px]">{a.courseName}</span>
+                          </Badge>
                           {dueMs > 0 && (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-mono font-bold ${
-                                isUrgent ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
-                              }`}
+                            <Badge
+                              tone={isUrgent ? "warning" : "neutral"}
+                              dot={isUrgent}
+                              size="small"
                             >
                               ⏳ {formatHMS(liveSec)}
-                            </span>
+                            </Badge>
                           )}
                         </div>
 
@@ -464,137 +450,172 @@ export function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                         <span>截止：{a.dueTimeStr}</span>
-                        {isUrgent ? (
-                          <span className="text-amber-600 font-semibold text-[11px]">48小时内紧急</span>
-                        ) : (
-                          <span className="text-slate-400 text-[11px]">待完成</span>
-                        )}
+                        <Badge tone={isUrgent ? "warning" : "neutral"} size="small">
+                          {isUrgent ? "48小时内紧急" : "待完成"}
+                        </Badge>
                       </div>
-                    </div>
+                    </Card>
                   );
                 })
               ) : (
-                <div className="col-span-1 md:col-span-2 rounded-xl border border-slate-200 bg-slate-50/50 p-6 text-center space-y-2">
-                  <div className="text-3xl">🏖️</div>
-                  <div className="text-sm font-bold text-slate-700">近 48 小时暂无紧急待交作业</div>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    所有待办作业均在安全期内或已全部提交完毕。
-                  </p>
-                </div>
+                <Card raised className="col-span-1 md:col-span-2 p-8 text-center">
+                  <EmptyState
+                    variant="default"
+                    icon={<span className="text-3xl">🏖️</span>}
+                    title="近 48 小时暂无紧急待交作业"
+                    description="所有待办作业均在安全期内或已全部提交完毕。"
+                  />
+                </Card>
               )
             )}
           </div>
         </section>
 
-        {/* === 第二行：学业快览 === */}
+        {/* === 第二行：学业快览 (KPI Metrics Tiles) === */}
         <section className="space-y-3">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            <span>📊</span>
-            <span>学业快览</span>
-          </h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Link
-              to="/courses"
-              className="group rounded-xl border border-slate-200 bg-white p-4 hover:border-zju-primary hover:shadow-xs transition"
-            >
-              <div className="text-2xl mb-1 group-hover:scale-110 transition-transform origin-left">📚</div>
-              <div className="text-xs text-slate-500">本学期课程</div>
-              <div className="text-lg font-bold text-slate-800 mt-0.5">
-                {timetableLoading ? "…" : `${totalCourseCount} 门`}
-              </div>
-              <div className="text-[11px] text-zju-primary group-hover:underline mt-1">
-                {dateInfo?.academicYear
-                  ? `${dateInfo.academicYear} ${dateInfo.term}课表 →`
-                  : "查看每周课表 →"}
-              </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>📊</span>
+              <span>学业快览</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">本学期核心学业统计与核心页面直达</p>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <Link to="/courses" className="block h-full">
+              <Card raised interactive className="p-4.5 h-full group transition-all duration-150 hover:-translate-y-0.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">本学期课程</span>
+                    <div className="size-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
+                      📚
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-3xl font-bold tracking-tight text-slate-900">
+                      {timetableLoading ? "…" : totalCourseCount}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">门课</span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-zju-primary font-semibold group-hover:underline mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span>{dateInfo?.academicYear ? `${dateInfo.term}课表` : "每周课表"}</span>
+                  <span>→</span>
+                </div>
+              </Card>
             </Link>
 
-            <Link
-              to="/assignments"
-              className="group rounded-xl border border-slate-200 bg-white p-4 hover:border-amber-400 hover:shadow-xs transition"
-            >
-              <div className="text-2xl mb-1 group-hover:scale-110 transition-transform origin-left">📝</div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">待办作业</span>
-                {urgentAssignments.length > 0 && (
-                  <span className="rounded-full bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-800">
-                    {urgentAssignments.length} 临近
-                  </span>
-                )}
-              </div>
-              <div className="text-lg font-bold text-slate-800 mt-0.5">
-                {assignmentsLoading ? "…" : `${activePending.length} 项待交`}
-              </div>
-              <div className="text-[11px] text-amber-600 group-hover:underline mt-1">
-                查看作业截止 →
-              </div>
+            <Link to="/assignments" className="block h-full">
+              <Card raised interactive className="p-4.5 h-full group transition-all duration-150 hover:-translate-y-0.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">待办作业</span>
+                    <div className="size-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
+                      📝
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-3xl font-bold tracking-tight text-slate-900">
+                      {assignmentsLoading ? "…" : activePending.length}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">项待交</span>
+                    {urgentAssignments.length > 0 && (
+                      <Badge tone="warning" size="small" className="ml-2">
+                        {urgentAssignments.length} 临近
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="text-[11px] text-amber-600 font-semibold group-hover:underline mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span>查看截止列表</span>
+                  <span>→</span>
+                </div>
+              </Card>
             </Link>
 
-            <Link
-              to="/exams"
-              className="group rounded-xl border border-slate-200 bg-white p-4 hover:border-indigo-400 hover:shadow-xs transition"
-            >
-              <div className="text-2xl mb-1 group-hover:scale-110 transition-transform origin-left">📋</div>
-              <div className="text-xs text-slate-500">考试安排</div>
-              <div className="text-lg font-bold text-slate-800 mt-0.5">
-                {examsLoading ? "…" : `${exams?.length ?? 0} 场`}
-              </div>
-              <div className="text-[11px] text-indigo-600 group-hover:underline mt-1">
-                查看考场考签 →
-              </div>
+            <Link to="/exams" className="block h-full">
+              <Card raised interactive className="p-4.5 h-full group transition-all duration-150 hover:-translate-y-0.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">考试安排</span>
+                    <div className="size-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
+                      📋
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-3xl font-bold tracking-tight text-slate-900">
+                      {examsLoading ? "…" : exams?.length ?? 0}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">场待考</span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-indigo-600 font-semibold group-hover:underline mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span>查看考场考签</span>
+                  <span>→</span>
+                </div>
+              </Card>
             </Link>
 
-            <Link
-              to="/downloads"
-              className="group rounded-xl border border-slate-200 bg-white p-4 hover:border-emerald-400 hover:shadow-xs transition"
-            >
-              <div className="text-2xl mb-1 group-hover:scale-110 transition-transform origin-left">📁</div>
-              <div className="text-xs text-slate-500">下载中心</div>
-              <div className="text-lg font-bold text-slate-800 mt-0.5">本地文档</div>
-              <div className="text-[11px] text-emerald-600 group-hover:underline mt-1">
-                管理已存文件 →
-              </div>
+            <Link to="/downloads" className="block h-full">
+              <Card raised interactive className="p-4.5 h-full group transition-all duration-150 hover:-translate-y-0.5 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">下载中心</span>
+                    <div className="size-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-base group-hover:scale-110 transition-transform">
+                      📁
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-2xl font-bold tracking-tight text-slate-900">
+                      本地文档
+                    </span>
+                  </div>
+                </div>
+                <div className="text-[11px] text-emerald-600 font-semibold group-hover:underline mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span>管理课件与资料</span>
+                  <span>→</span>
+                </div>
+              </Card>
             </Link>
           </div>
         </section>
 
-        {/* === 百宝箱与拓展工具矩阵 === */}
-        <section className="space-y-4 pt-2">
+        {/* === 第三行：百宝箱与拓展工具矩阵 === */}
+        <section className="space-y-3">
           <div>
-            <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span>🧰</span>
               <span>校园百宝箱</span>
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5">
               常用教务平台、校内生活与学术服务快捷直达
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             {TOOLS.map((tool) => {
               const isExt = !!tool.extUrl;
               const content = (
-                <div
-                  className={`h-full rounded-xl border p-4 shadow-2xs flex flex-col justify-between transition ${
-                    tool.available !== false
-                      ? "border-slate-200 bg-white hover:border-zju-primary hover:shadow-xs group cursor-pointer"
-                      : "border-dashed border-slate-200 bg-slate-50/60 opacity-80"
+                <Card
+                  raised
+                  interactive={tool.available !== false}
+                  className={`p-4 h-full flex flex-col justify-between group transition-all duration-150 hover:-translate-y-0.5 ${
+                    tool.available === false ? "opacity-75" : ""
                   }`}
                 >
                   <div>
-                    <div className="text-2xl mb-2 group-hover:scale-110 transition-transform origin-left">
+                    <div className="size-10 rounded-xl bg-slate-100/90 text-xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:bg-blue-50 transition-all">
                       {tool.icon}
                     </div>
                     <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-semibold text-sm text-slate-800 group-hover:text-zju-primary transition-colors">
+                      <h3 className="font-semibold text-sm text-slate-900 group-hover:text-zju-primary transition-colors">
                         {tool.title}
                       </h3>
                       {tool.available === false && (
-                        <span className="rounded bg-slate-200 px-1.5 py-0.2 text-[10px] text-slate-500">
+                        <Badge tone="neutral" size="small">
                           即将推出
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     <p className="text-xs text-slate-500 leading-relaxed">
@@ -603,11 +624,12 @@ export function DashboardPage() {
                   </div>
 
                   {tool.available !== false && (
-                    <div className="mt-3 pt-2 text-[11px] font-semibold text-zju-primary flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      <span>{isExt ? "访问校内服务 ↗" : "进入功能 →"}</span>
+                    <div className="mt-3.5 pt-2 border-t border-slate-100 text-[11px] font-semibold text-zju-primary flex items-center justify-between group-hover:translate-x-0.5 transition-transform">
+                      <span>{isExt ? "访问校内服务" : "进入功能"}</span>
+                      <span>{isExt ? "↗" : "→"}</span>
                     </div>
                   )}
-                </div>
+                </Card>
               );
 
               if (tool.extUrl) {
@@ -644,34 +666,28 @@ export function DashboardPage() {
 
         {/* === 第四行：系统与连接状态 === */}
         <section className="space-y-3">
-          <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            <span>⚙️</span>
-            <span>系统与连接状态</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>⚙️</span>
+              <span>系统与连接状态</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">账号认证凭据与推理大模型连接检测</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {/* 1. 浙大统一身份认证状态 */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs hover:border-slate-300 transition flex flex-col justify-between">
+            <Card raised className="p-4 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-slate-500">统一身份认证 (ZJU)</span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      authLoading
-                        ? "bg-slate-100 text-slate-600"
-                        : loggedIn
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
-                        : "bg-amber-50 text-amber-700 border border-amber-200/60"
-                    }`}
+                  <Badge
+                    tone={authLoading ? "neutral" : loggedIn ? "success" : "warning"}
+                    dot
+                    size="small"
                   >
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        authLoading ? "bg-slate-400" : loggedIn ? "bg-emerald-500" : "bg-amber-500"
-                      }`}
-                    />
                     {authLoading ? "检测中…" : loggedIn ? "已登录" : "未登录"}
-                  </span>
+                  </Badge>
                 </div>
-                <div className="font-semibold text-sm text-slate-800 truncate">
+                <div className="font-semibold text-sm text-slate-900 truncate">
                   {loggedIn
                     ? `账号：${authStatus?.username ?? "已认证"}`
                     : "尚未绑定学号密码"}
@@ -691,31 +707,22 @@ export function DashboardPage() {
                   <span>→</span>
                 </Link>
               </div>
-            </div>
+            </Card>
 
             {/* 2. AI 模型 API 接口状态 */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs hover:border-slate-300 transition flex flex-col justify-between">
+            <Card raised className="p-4 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-slate-500">大模型 API 接口</span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                      settingsLoading
-                        ? "bg-slate-100 text-slate-600"
-                        : hasModelConfigured
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
-                        : "bg-rose-50 text-rose-700 border border-rose-200/60"
-                    }`}
+                  <Badge
+                    tone={settingsLoading ? "neutral" : hasModelConfigured ? "success" : "danger"}
+                    dot
+                    size="small"
                   >
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        settingsLoading ? "bg-slate-400" : hasModelConfigured ? "bg-emerald-500" : "bg-rose-500"
-                      }`}
-                    />
                     {settingsLoading ? "检测中…" : hasModelConfigured ? "已就绪" : "未配置"}
-                  </span>
+                  </Badge>
                 </div>
-                <div className="font-semibold text-sm text-slate-800 truncate">
+                <div className="font-semibold text-sm text-slate-900 truncate">
                   {hasModelConfigured
                     ? `${activeProvider?.name ?? settingsData?.credentials?.modelProviderName ?? "大模型服务"}`
                     : "暂无可用模型配置"}
@@ -735,37 +742,7 @@ export function DashboardPage() {
                   <span>→</span>
                 </Link>
               </div>
-            </div>
-          </div>
-        </section>
-
-        {/* === 常用提问与 AI 对话快捷助手 === */}
-        <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 via-blue-50/40 to-white p-5 space-y-3 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">💡</span>
-              <h3 className="text-sm font-bold text-slate-800">快捷向 AI 校园助手提问</h3>
-            </div>
-            <button
-              onClick={() => openChat()}
-              className="text-xs font-semibold text-zju-primary hover:underline cursor-pointer"
-            >
-              展开浮窗 →
-            </button>
-          </div>
-          <p className="text-xs text-slate-500">
-            点击以下常用预设问题，将直接唤起右下角智能浮窗并填入对应问题：
-          </p>
-          <div className="flex flex-wrap gap-2 pt-1">
-            {AI_SHORTCUTS.map((item) => (
-              <button
-                key={item.label}
-                onClick={() => openChat(undefined, item.prompt)}
-                className="rounded-xl border border-indigo-200/80 bg-white px-3 py-2 text-xs text-slate-700 hover:border-zju-primary hover:text-zju-primary hover:shadow-2xs active:scale-95 transition cursor-pointer"
-              >
-                {item.label}
-              </button>
-            ))}
+            </Card>
           </div>
         </section>
       </div>

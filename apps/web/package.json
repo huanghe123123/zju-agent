@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@crisp-ui-kit/crisp": "^0.2.0",
     "@tanstack/react-query": "^5.101.2",
     "@zju-agent/core": "workspace:*",
     "react": "^18.3.1",

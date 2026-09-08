@@ -8,12 +8,18 @@ import {
 import {
   formatDateTime,
   deadlineUrgency,
-  urgencyClass,
 } from "../utils/format.js";
 import { sanitizeHtml } from "../utils/sanitizeHtml.js";
 import type { Assignment } from "@zju-agent/core";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Segmented,
+} from "@crisp-ui-kit/crisp";
 
 const DEFAULT_URGENT_HOURS = 24;
 
@@ -95,55 +101,75 @@ export function AssignmentsPage() {
         </RightPanel>
       }
     >
-      <div className="mb-4 flex items-baseline justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-zju-primary">作业</h1>
-        <button
+        <Button
+          intent="neutral"
+          size="sm"
           onClick={() => refetch()}
-          disabled={isFetching}
-          className="text-sm text-slate-500 hover:text-zju-primary disabled:opacity-50"
+          loading={isFetching}
+          className="text-xs"
         >
           {isFetching ? "刷新中…" : "刷新"}
-        </button>
+        </Button>
       </div>
 
-      {/* 四分类 Tab */}
-      <div className="mb-4 flex gap-1 rounded-md border border-slate-200 bg-white p-1">
-        <TabBtn
-          active={tab === "urgent"}
-          onClick={() => {
-            setTab("urgent");
-            setSearchParams({ tab: "urgent" });
+      {/* 四分类 Crisp Segmented Tab */}
+      <div className="mb-4 overflow-x-auto pb-1">
+        <Segmented
+          value={tab}
+          onValueChange={(val) => {
+            const nextTab = val as "urgent" | "relaxed" | "overdue" | "submitted";
+            setTab(nextTab);
+            setSearchParams({ tab: nextTab });
           }}
-        >
-          将截止（{urgent.length}）
-        </TabBtn>
-        <TabBtn
-          active={tab === "relaxed"}
-          onClick={() => {
-            setTab("relaxed");
-            setSearchParams({ tab: "relaxed" });
-          }}
-        >
-          还不急（{relaxed.length}）
-        </TabBtn>
-        <TabBtn
-          active={tab === "overdue"}
-          onClick={() => {
-            setTab("overdue");
-            setSearchParams({ tab: "overdue" });
-          }}
-        >
-          已截止（{overdue.length}）
-        </TabBtn>
-        <TabBtn
-          active={tab === "submitted"}
-          onClick={() => {
-            setTab("submitted");
-            setSearchParams({ tab: "submitted" });
-          }}
-        >
-          已提交（{submitted.length}）
-        </TabBtn>
+          options={[
+            {
+              value: "urgent",
+              label: (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                  <span>将截止</span>
+                  <Badge tone="danger" size="small">
+                    {urgent.length}
+                  </Badge>
+                </span>
+              ),
+            },
+            {
+              value: "relaxed",
+              label: (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                  <span>还不急</span>
+                  <Badge tone="warning" size="small">
+                    {relaxed.length}
+                  </Badge>
+                </span>
+              ),
+            },
+            {
+              value: "overdue",
+              label: (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                  <span>已截止</span>
+                  <Badge tone="neutral" size="small">
+                    {overdue.length}
+                  </Badge>
+                </span>
+              ),
+            },
+            {
+              value: "submitted",
+              label: (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+                  <span>已提交</span>
+                  <Badge tone="success" size="small">
+                    {submitted.length}
+                  </Badge>
+                </span>
+              ),
+            },
+          ]}
+        />
       </div>
 
       {error ? (
@@ -151,81 +177,73 @@ export function AssignmentsPage() {
       ) : isLoading ? (
         <Loading />
       ) : list.length === 0 ? (
-        <div className="rounded-md border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-          {tab === "urgent"
-            ? "暂无紧急作业 🎉"
-            : tab === "relaxed"
-              ? "暂无作业"
-              : tab === "overdue"
-                ? "暂无逾期作业 🎉"
-                : "暂无已提交作业"}
-        </div>
+        <Card raised className="p-8 text-center">
+          <EmptyState
+            variant="default"
+            icon={<span className="text-3xl">🎉</span>}
+            title={
+              tab === "urgent"
+                ? "暂无紧急作业 🎉"
+                : tab === "relaxed"
+                  ? "暂无常规作业"
+                  : tab === "overdue"
+                    ? "暂无逾期作业 🎉"
+                    : "暂无已提交作业"
+            }
+            description="当前分类下没有相关作业记录。"
+          />
+        </Card>
       ) : (
-        <ul className="space-y-2">
+        <div className="space-y-2.5">
           {list.map((a) => (
             <AssignmentItem key={`${a.courseId}-${a.id}`} assignment={a} />
           ))}
-        </ul>
+        </div>
       )}
 
     </Layout>
   );
 }
 
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 whitespace-nowrap rounded px-3 py-1.5 text-sm transition-colors ${
-        active ? "bg-zju-primary text-white" : "text-slate-600 hover:bg-slate-100"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 function AssignmentItem({ assignment }: { assignment: Assignment }) {
   const urgency = deadlineUrgency(assignment.deadline);
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <Card raised interactive className="p-4 transition-all duration-150">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-slate-800">{assignment.title}</div>
+          <div className="truncate text-sm font-semibold text-slate-900">{assignment.title}</div>
           <div className="mt-0.5 text-xs text-slate-500">{assignment.courseName}</div>
         </div>
         {assignment.submitted ? (
-          <span className="shrink-0 rounded bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">
+          <Badge tone="success" size="small">
             已提交
-          </span>
+          </Badge>
         ) : urgency !== "none" ? (
-          <span className={`shrink-0 text-xs ${urgencyClass(urgency)}`}>
+          <Badge
+            tone={urgency === "overdue" ? "danger" : urgency === "urgent" ? "warning" : "neutral"}
+            dot={urgency === "urgent"}
+            size="small"
+          >
             {urgency === "overdue" ? "已逾期" : urgency === "urgent" ? "即将截止" : "还不急"}
-          </span>
+          </Badge>
         ) : null}
       </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
         <span>截止：{formatDateTime(assignment.deadline)}</span>
         {assignment.attachments.length > 0 && (
-          <span>附件 {assignment.attachments.length}</span>
+          <Badge tone="neutral" size="small">
+            附件 {assignment.attachments.length}
+          </Badge>
         )}
       </div>
       {assignment.description && (
         <div
-          className="mt-2 text-xs text-slate-500 [&_p]:mb-1"
+          className="mt-2.5 pt-2 border-t border-slate-100 text-xs text-slate-600 [&_p]:mb-1"
           // 作业描述来自学在浙大富文本，必须经白名单消毒后再注入，防存储型 XSS
           dangerouslySetInnerHTML={{ __html: sanitizeHtml(assignment.description) }}
         />
       )}
-    </li>
+    </Card>
   );
 }
 

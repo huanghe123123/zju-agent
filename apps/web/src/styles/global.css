@@ -4,10 +4,14 @@
 
 :root {
   color-scheme: light;
+  --bg-brand-solid: #003f88;
+  --bg-brand-solid-pressed: #00326e;
 }
 
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
 }

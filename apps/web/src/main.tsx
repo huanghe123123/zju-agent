@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
+import "@crisp-ui-kit/crisp/styles.css";
 import "./styles/global.css";
 
 const queryClient = new QueryClient({

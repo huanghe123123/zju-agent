@@ -9,6 +9,7 @@ import { formatDateTime } from "../utils/format.js";
 import { parseExamTimestamp } from "../utils/format.js";
 import type { Exam, Semester } from "@zju-agent/core";
 import { useMemo, useState } from "react";
+import { Badge, Button, Card } from "@crisp-ui-kit/crisp";
 
 /** 学在浙大学期名 → 教务网 xnxq01id */
 function semesterToXnxq01id(name: string): string | null {
@@ -136,13 +137,15 @@ function ExamsPanel({ xnxq01id }: { xnxq01id: string }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <button
+        <Button
+          intent="neutral"
+          size="sm"
           onClick={() => refetch()}
-          disabled={isFetching}
-          className="text-sm text-slate-500 hover:text-zju-primary disabled:opacity-50"
+          loading={isFetching}
+          className="text-xs"
         >
           {isFetching ? "刷新中…" : "刷新"}
-        </button>
+        </Button>
       </div>
 
       <Section title="待考科目" exams={upcoming} emptyText="本学期暂无待考科目安排 🎉" />
@@ -163,7 +166,7 @@ function Section({
 }) {
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold text-slate-600">
+      <h2 className="mb-2 text-sm font-semibold text-slate-700">
         {title}（{exams.length}）
       </h2>
       {exams.length === 0 ? (
@@ -171,11 +174,11 @@ function Section({
           <div className="text-xs text-slate-400">{emptyText}</div>
         ) : null
       ) : (
-        <ul className="space-y-2">
+        <div className="space-y-2.5">
           {exams.map((e) => (
             <ExamItem key={e.id} exam={e} />
           ))}
-        </ul>
+        </div>
       )}
     </section>
   );
@@ -188,16 +191,16 @@ function ExamItem({ exam }: { exam: Exam }) {
   const badge = (() => {
     if (Number.isNaN(ts)) {
       return (
-        <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500 font-medium">
+        <Badge tone="neutral" size="small">
           时间待定
-        </span>
+        </Badge>
       );
     }
     if (ts < now) {
       return (
-        <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-400 font-medium">
+        <Badge tone="neutral" size="small">
           已结束
-        </span>
+        </Badge>
       );
     }
 
@@ -207,50 +210,50 @@ function ExamItem({ exam }: { exam: Exam }) {
 
     if (diffHours <= 24) {
       return (
-        <span className="shrink-0 rounded bg-rose-100 text-rose-700 px-2 py-0.5 text-xs font-bold animate-pulse">
+        <Badge tone="danger" dot size="small">
           即将开考 · 仅剩 {Math.max(1, diffHours)} 小时
-        </span>
+        </Badge>
       );
     }
     if (diffDays <= 7) {
       return (
-        <span className="shrink-0 rounded bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-semibold">
+        <Badge tone="warning" size="small">
           近期待考 · 距今 {diffDays} 天
-        </span>
+        </Badge>
       );
     }
     return (
-      <span className="shrink-0 rounded bg-slate-100 text-slate-600 px-2 py-0.5 text-xs font-medium">
+      <Badge tone="neutral" size="small">
         待考 · 距今 {diffDays} 天
-      </span>
+      </Badge>
     );
   })();
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition">
+    <Card raised interactive className="p-4 transition-all duration-150">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-slate-800">{exam.courseName}</div>
+          <div className="truncate text-sm font-semibold text-slate-900">{exam.courseName}</div>
           <div className="mt-0.5 text-xs text-slate-500">
             {exam.semester ? `学期 ${exam.semester}` : ""}
           </div>
         </div>
         {badge}
       </div>
-      <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-md">
+      <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100">
         <div>
           <div className="text-slate-400 mb-0.5">考试时间</div>
-          <div className="font-medium text-slate-700">{formatDateTime(exam.time)}</div>
+          <div className="font-medium text-slate-800">{formatDateTime(exam.time)}</div>
         </div>
         <div>
           <div className="text-slate-400 mb-0.5">地点</div>
-          <div className="truncate font-medium text-slate-700">{exam.location || "待公布"}</div>
+          <div className="truncate font-medium text-slate-800">{exam.location || "待公布"}</div>
         </div>
         <div>
           <div className="text-slate-400 mb-0.5">座位</div>
-          <div className="font-medium text-slate-700">{exam.seat || "待公布"}</div>
+          <div className="font-medium text-slate-800">{exam.seat || "待公布"}</div>
         </div>
       </div>
-    </li>
+    </Card>
   );
 }
